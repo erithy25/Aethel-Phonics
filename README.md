@@ -11,10 +11,12 @@ structures at room temperature.
 | Module | Purpose |
 |--------|---------|
 | **A** — Material & Geometry Editor | Substrate database, TMD layer specification, 2D/3D CAD geometry |
-| **B** — Multiphysics Simulation Core | FDTD Maxwell solver, coupled-oscillator model, Gross-Pitaevskii nonlinear solver |
-| **C** — Input/Output & Detection | Laser source editor, virtual detectors with ps-resolution |
-| **D** — Logic Compiler & Mapping | Gate library (AND/OR/NOT/XOR/NAND), automatic placement & routing |
+| **B** — Multiphysics Simulation Core | 2D/3D FDTD Maxwell (GPU-accelerated, multi-GPU), coupled-oscillator model, 2D/3D Gross-Pitaevskii with polariton-bullet solitons |
+| **C** — Input/Output & Detection | Laser sources, virtual detectors, hollow-core fibre interface, petabit I/O dashboard |
+| **D** — Logic Compiler & Mapping | Gate library, 2D flat & 3D volumetric placement with RL-based thermal-aware optimisation |
 | **E** — Visualization & Metrics | Real-time field visualization, performance dashboard |
+| **F** — Thermodynamic Feedback | Coupled heat-optics (Landauer + thermo-optic), TPV energy recycling, max clock-rate analysis |
+| **G** — Quantum-Cosmic Stress Tests | Cosmic ray impact simulation, self-healing routing, phase stability under vibration |
 
 ## Quick Start
 

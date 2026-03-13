@@ -17,6 +17,7 @@ structures at room temperature.
 | **E** — Visualization & Metrics | Real-time field visualization, performance dashboard |
 | **F** — Thermodynamic Feedback | Coupled heat-optics (Landauer + thermo-optic), TPV energy recycling, max clock-rate analysis |
 | **G** — Quantum-Cosmic Stress Tests | Cosmic ray impact simulation, self-healing routing, phase stability under vibration |
+| **H** — Command & Control Dashboard | Digital Twin 3D viewport, physics control, Kreislauf thermal monitor, petabit I/O radar, resilience center, RL optimizer status |
 
 ## Quick Start
 

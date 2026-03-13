@@ -20,6 +20,10 @@ dev = [
     "pytest>=7.4",
     "mypy>=1.5",
 ]
+dashboard = [
+    "streamlit>=1.30",
+    "plotly>=5.18",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

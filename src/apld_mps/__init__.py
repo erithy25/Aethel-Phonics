@@ -13,6 +13,7 @@ Modules:
     F — Thermodynamic Feedback ('Aethel-Kreislauf')
     G — Quantum-Cosmic Stress Test Suite
     H — Command & Control Dashboard
+    I — AI Tensor Compiler
 """
 
 __version__ = "0.3.0"

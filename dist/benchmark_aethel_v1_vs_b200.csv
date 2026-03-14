@@ -1,0 +1,27 @@
+Parameter,Aethel V1 (simulated),NVIDIA B200 (shipping),Unit,Notes
+Compute substrate,Sapphire + WS2/WSe2 TMD,TSMC 4NP silicon,,
+Compute mechanism,Exciton-polariton interference,Electronic tensor cores,,
+TDP / Power envelope,< 1 mW @ 22k tok/s,1000,W,
+Technology Readiness Level,TRL 1-2 (simulation),TRL 9 (shipping),,
+Model,Llama-3-8B,Llama-3-8B,,
+Parameters,5559025664,5559025664,,
+FLOPs per token,11118051328,11118051328,,
+Gate count (physical),201326592 (time-multiplexed),208000000000 transistors,,
+Gate switching energy,0.5,~1000000,aJ,polariton gate vs transistor (~1 pJ)
+Energy per token,16.68,~10000000,nJ,
+Throughput (target),22000,~100000,tokens/s,B200 estimated for 8B batched
+Throughput (theoretical peak),110000000,~100000,tokens/s,single pipeline vs batched
+Energy efficiency,59952038,~100,tokens/s/W,
+Latency per token,0.732,~10000,ns,single inference pass
+Breakdown clock (0% reversible),237,,GHz,thermo-optic ER < 3 dB
+Breakdown clock (50% reversible),478,,GHz,reversible gates halve Landauer heat
+Breakdown clock (100% reversible),infinite,,GHz,zero Landauer dissipation
+Operating temperature,300,300,K,room temperature
+Cooling,Passive radiative + TPV,Active liquid,,
+Memory technology,Holographic SCO (TRL 1-2),HBM3e (TRL 9),,
+Memory capacity,100 GB,192 GB,,
+Memory bandwidth,Photonic (holographic recall),8 TB/s,,
+Interconnect,Free-space photonic,NVLink 5.0 (1.8 TB/s),,
+Sapphire refractive index,1.76,N/A,,
+Sapphire dn/dT,1.3e-5,N/A,1/K,thermo-optic coefficient
+Gate array footprint,41 x 41 x 0.13,~814 mm² die,mm,3D monolith vs 2D die

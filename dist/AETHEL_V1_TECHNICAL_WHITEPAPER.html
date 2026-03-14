@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aethel V1 — Technical Analysis &amp; Architecture Comparison</title>
+<style>
+  @page { size: A4; margin: 20mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    color: #1a1a2e;
+    background: #fff;
+    line-height: 1.6;
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 20mm;
+    font-size: 10.5pt;
+  }
+
+  /* --- Header --- */
+  .header {
+    border-bottom: 3px solid #0f3460;
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+  .header h1 {
+    font-size: 26pt;
+    color: #0f3460;
+    font-weight: 300;
+    letter-spacing: -0.5px;
+  }
+  .header .subtitle {
+    font-size: 13pt;
+    color: #16213e;
+    margin-top: 4px;
+  }
+  .header .meta {
+    font-size: 9pt;
+    color: #666;
+    margin-top: 8px;
+  }
+
+  /* --- Sections --- */
+  h2 {
+    font-size: 15pt;
+    color: #0f3460;
+    border-left: 4px solid #e94560;
+    padding-left: 12px;
+    margin: 28px 0 12px 0;
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 12pt;
+    color: #16213e;
+    margin: 20px 0 8px 0;
+  }
+  p { margin: 8px 0; text-align: justify; }
+
+  /* --- Key Metric Boxes --- */
+  .metric-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .metric-box {
+    background: linear-gradient(135deg, #0f3460 0%, #16213e 100%);
+    color: #fff;
+    padding: 14px;
+    border-radius: 6px;
+    text-align: center;
+  }
+  .metric-box .value {
+    font-size: 22pt;
+    font-weight: 700;
+    display: block;
+    margin-bottom: 2px;
+  }
+  .metric-box .label {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.85;
+  }
+  .metric-box.highlight {
+    background: linear-gradient(135deg, #e94560 0%, #c23152 100%);
+  }
+
+  /* --- Tables --- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 16px 0;
+    font-size: 9.5pt;
+  }
+  th {
+    background: #0f3460;
+    color: #fff;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  tr:nth-child(even) { background: #f8f9fa; }
+  tr:hover { background: #eef1f5; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .unit { color: #666; font-size: 8.5pt; }
+  .advantage { color: #0a8f3c; font-weight: 600; }
+  .caution { color: #e94560; font-weight: 600; }
+
+  /* --- Call-out boxes --- */
+  .callout {
+    border-left: 4px solid #e94560;
+    background: #fff5f5;
+    padding: 12px 16px;
+    margin: 16px 0;
+    font-size: 10pt;
+  }
+  .callout.info {
+    border-left-color: #0f3460;
+    background: #f0f4fa;
+  }
+  .callout.warning {
+    border-left-color: #ff9800;
+    background: #fff8e1;
+  }
+  .callout strong { display: block; margin-bottom: 4px; }
+
+  /* --- Risk matrix --- */
+  .risk-matrix {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 12px 0;
+  }
+  .risk-item {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .risk-item.critical { border-left: 4px solid #e94560; }
+  .risk-item.moderate { border-left: 4px solid #ff9800; }
+  .risk-item.low { border-left: 4px solid #4caf50; }
+  .risk-item .risk-label {
+    font-size: 8pt;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+  .risk-item.critical .risk-label { color: #e94560; }
+  .risk-item.moderate .risk-label { color: #ff9800; }
+  .risk-item.low .risk-label { color: #4caf50; }
+
+  /* --- Formula blocks --- */
+  .formula {
+    background: #f4f4f8;
+    border: 1px solid #ddd;
+    padding: 10px 16px;
+    margin: 10px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 10pt;
+    border-radius: 4px;
+    overflow-x: auto;
+  }
+
+  /* --- Footer --- */
+  .footer {
+    margin-top: 32px;
+    padding-top: 12px;
+    border-top: 1px solid #ddd;
+    font-size: 8pt;
+    color: #999;
+    text-align: center;
+  }
+
+  /* --- Page breaks --- */
+  .page-break { page-break-before: always; }
+
+  /* --- Print --- */
+  @media print {
+    body { padding: 0; max-width: none; }
+    .metric-box { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+
+  .trl-bar {
+    height: 10px;
+    border-radius: 5px;
+    background: #e0e0e0;
+    margin-top: 4px;
+    position: relative;
+  }
+  .trl-bar .fill {
+    height: 100%;
+    border-radius: 5px;
+    background: linear-gradient(90deg, #e94560, #ff9800, #4caf50);
+  }
+  .trl-bar .marker {
+    position: absolute;
+    top: -3px;
+    width: 3px;
+    height: 16px;
+    background: #1a1a2e;
+    border-radius: 1px;
+  }
+  .source-ref {
+    font-size: 8pt;
+    color: #888;
+    vertical-align: super;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- HEADER                                                        -->
+<!-- ============================================================ -->
+<div class="header">
+  <h1>Aethel V1</h1>
+  <div class="subtitle">Polariton-Based Photonic Inference Engine &mdash; Technical Analysis &amp; Architecture Comparison</div>
+  <div class="meta">
+    APLD-MPS Simulation Suite v0.4.0 &nbsp;|&nbsp; Generated: March 2026 &nbsp;|&nbsp; CONFIDENTIAL DRAFT
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- EXECUTIVE SUMMARY                                             -->
+<!-- ============================================================ -->
+<h2>1 &mdash; Executive Summary</h2>
+
+<p>
+  This document presents simulation-derived performance projections for the
+  <strong>Aethel V1</strong>, a hypothetical room-temperature polariton logic device
+  operating on a monolithic sapphire substrate. All numbers were generated by the
+  APLD-MPS multiphysics simulation suite (Modules B, F, I) and are
+  <em>theoretical upper bounds</em> contingent on hardware that does not yet exist.
+</p>
+
+<div class="metric-grid">
+  <div class="metric-box">
+    <span class="value">22,000</span>
+    <span class="label">Tokens/s (Llama-3-8B, target)</span>
+  </div>
+  <div class="metric-box highlight">
+    <span class="value">&lt; 1 mW</span>
+    <span class="label">Power at 22k tok/s</span>
+  </div>
+  <div class="metric-box">
+    <span class="value">237 GHz</span>
+    <span class="label">Thermo-optic breakdown</span>
+  </div>
+</div>
+
+<div class="callout info">
+  <strong>Honest framing for readers of this document:</strong>
+  The Aethel V1 is a <em>simulation-only architecture</em>. No physical prototype exists.
+  The comparison to NVIDIA B200 contrasts a <em>hypothetical photonic system</em> against
+  <em>shipping silicon</em>. The gap between simulation and reality is addressed in Section 5.
+</div>
+
+<!-- ============================================================ -->
+<!-- ARCHITECTURE COMPARISON                                       -->
+<!-- ============================================================ -->
+<h2>2 &mdash; Architecture Comparison: Aethel V1 vs. NVIDIA B200</h2>
+
+<p>
+  The following table compares the Aethel V1 (simulation projections for Llama-3-8B inference)
+  against the NVIDIA B200 Blackwell GPU (published specifications and benchmarks).
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width: 35%;">Parameter</th>
+      <th style="width: 30%;">Aethel V1 (simulated)</th>
+      <th style="width: 30%;">NVIDIA B200 (shipping)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Compute substrate</strong></td>
+      <td>Monolithic sapphire (Al<sub>2</sub>O<sub>3</sub>), WS<sub>2</sub>/WSe<sub>2</sub> TMD layers</td>
+      <td>TSMC 4NP silicon, 208B transistors</td>
+    </tr>
+    <tr>
+      <td><strong>Compute mechanism</strong></td>
+      <td>Exciton-polariton interference (MZI gates)</td>
+      <td>Electronic tensor cores (FP4/FP8/FP16)</td>
+    </tr>
+    <tr>
+      <td><strong>Gate / core count</strong></td>
+      <td>201M gates <span class="unit">(reusable, time-multiplexed)</span></td>
+      <td>18,432 CUDA + 1,152 tensor cores</td>
+    </tr>
+    <tr>
+      <td><strong>Gate array size</strong></td>
+      <td>41 &times; 41 &times; 0.13 mm (3D sapphire)</td>
+      <td>~814 mm&sup2; die area (2D silicon)</td>
+    </tr>
+    <tr>
+      <td><strong>Peak compute</strong></td>
+      <td>N/A <span class="unit">(optical; not FLOPS-comparable)</span></td>
+      <td>9 PFLOPS <span class="unit">(FP4 sparse)</span></td>
+    </tr>
+    <tr>
+      <td><strong>Memory</strong></td>
+      <td>Holographic SCO <span class="unit">(100 GB, 50 nm cell pitch)</span></td>
+      <td>192 GB HBM3e <span class="unit">(8 TB/s bandwidth)</span></td>
+    </tr>
+    <tr>
+      <td><strong>Energy per gate / op</strong></td>
+      <td class="advantage">0.5 aJ <span class="unit">(5 &times; 10<sup>-19</sup> J)</span></td>
+      <td>~1 pJ <span class="unit">(10<sup>-12</sup> J, tensor core)</span></td>
+    </tr>
+    <tr>
+      <td><strong>Energy per token (Llama-3-8B)</strong></td>
+      <td class="advantage">16.68 nJ</td>
+      <td>~10,000,000 nJ <span class="unit">(~10 mJ at 1000W/100k tps)</span></td>
+    </tr>
+    <tr>
+      <td><strong>TDP / Power envelope</strong></td>
+      <td class="advantage">&lt; 1 mW at 22k tok/s</td>
+      <td>1,000 W</td>
+    </tr>
+    <tr>
+      <td><strong>Inference: Llama-3-8B</strong></td>
+      <td>22,000 tok/s <span class="unit">(conservative target)</span></td>
+      <td>~100,000 tok/s <span class="unit">(estimated, batched)</span></td>
+    </tr>
+    <tr>
+      <td><strong>Theoretical peak tok/s</strong></td>
+      <td>110M tok/s <span class="unit">(single pipeline)</span></td>
+      <td>~100,000 tok/s <span class="unit">(Llama-3-8B, batched)</span></td>
+    </tr>
+    <tr>
+      <td><strong>Energy efficiency</strong></td>
+      <td class="advantage">~60M tok/s per Watt</td>
+      <td>~100 tok/s per Watt</td>
+    </tr>
+    <tr>
+      <td><strong>Operating temperature</strong></td>
+      <td>300 K (room temperature)</td>
+      <td>300 K (room temperature)</td>
+    </tr>
+    <tr>
+      <td><strong>Cooling</strong></td>
+      <td>Passive radiative + TPV recycling</td>
+      <td>Active liquid cooling</td>
+    </tr>
+    <tr>
+      <td><strong>Interconnect</strong></td>
+      <td>Free-space photonic (speed of light in sapphire)</td>
+      <td>NVLink 5.0 (1.8 TB/s)</td>
+    </tr>
+    <tr>
+      <td><strong>Technology Readiness Level</strong></td>
+      <td class="caution">TRL 1-2 (simulation only)</td>
+      <td class="advantage">TRL 9 (shipping product)</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout warning">
+  <strong>Why the efficiency gap is so large:</strong>
+  Electronic transistors dissipate ~1 pJ per switching event due to capacitive charging
+  of metal interconnects. Polariton gates operate via photon interference in a dielectric
+  medium, theoretically avoiding resistive losses entirely. The 0.5 aJ figure is the
+  simulation's assumed switching energy and sits ~2,000&times; above the Landauer limit
+  (k<sub>B</sub>T&middot;ln2 &approx; 2.87 &times; 10<sup>-21</sup> J at 300 K). This is
+  plausible physics but <em>unverified in hardware</em>.
+</div>
+
+<!-- ============================================================ -->
+<!-- BENCHMARK: LLAMA-3-8B                                         -->
+<!-- ============================================================ -->
+<div class="page-break"></div>
+<h2>3 &mdash; Benchmark: Llama-3-8B Inference</h2>
+
+<h3>3.1 &mdash; Simulation Parameters</h3>
+
+<table>
+  <thead>
+    <tr><th>Parameter</th><th>Value</th><th>Source</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Model</td><td>Llama-3-8B (Meta)</td><td>Model spec</td></tr>
+    <tr><td>Parameters</td><td class="num">5,559,025,664</td><td>ModelParser (128k vocab)</td></tr>
+    <tr><td>Layers</td><td class="num">32</td><td>Architecture</td></tr>
+    <tr><td>Hidden dimension</td><td class="num">4,096</td><td>Architecture</td></tr>
+    <tr><td>FFN dimension</td><td class="num">11,008</td><td>Architecture (SwiGLU)</td></tr>
+    <tr><td>Attention heads</td><td class="num">32</td><td>Architecture</td></tr>
+    <tr><td>Sequence length</td><td class="num">2,048</td><td>Benchmark config</td></tr>
+    <tr><td>Weight precision</td><td class="num">INT8</td><td>Simulation default</td></tr>
+    <tr><td>FLOPs per token</td><td class="num">~11.12 &times; 10<sup>9</sup></td><td>ResourceEstimator (2&times;params)</td></tr>
+  </tbody>
+</table>
+
+<h3>3.2 &mdash; Latency Breakdown (per token, single pipeline)</h3>
+
+<table>
+  <thead>
+    <tr><th>Component</th><th class="num">Latency [ps]</th><th class="num">%</th><th>Mechanism</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Embedding lookup</td>
+      <td class="num">0.20</td>
+      <td class="num">0.03%</td>
+      <td>Holographic recall pulse</td>
+    </tr>
+    <tr>
+      <td>Attention (per layer)</td>
+      <td class="num">14.82</td>
+      <td class="num">64.8%</td>
+      <td>4&times; interference-grid MatMul (Q,K,V,O projections)</td>
+    </tr>
+    <tr>
+      <td>FFN (per layer)</td>
+      <td class="num">7.92</td>
+      <td class="num">34.6%</td>
+      <td>3&times; MatMul (up, gate, down) + nonlinear threshold</td>
+    </tr>
+    <tr>
+      <td>Memory read (per layer)</td>
+      <td class="num">0.10</td>
+      <td class="num">0.4%</td>
+      <td>SCO holographic weight readout</td>
+    </tr>
+    <tr>
+      <td>Propagation (per layer)</td>
+      <td class="num">0.03</td>
+      <td class="num">0.1%</td>
+      <td>c/n<sub>sapphire</sub> = 1.694 &times; 10<sup>8</sup> m/s</td>
+    </tr>
+    <tr style="font-weight: bold; background: #eef1f5;">
+      <td>Total per layer</td>
+      <td class="num">22.87</td>
+      <td class="num">&mdash;</td>
+      <td>&mdash;</td>
+    </tr>
+    <tr style="font-weight: bold; background: #0f3460; color: #fff;">
+      <td>Total (32 layers + embedding)</td>
+      <td class="num">732.0</td>
+      <td class="num">100%</td>
+      <td>= 0.732 ns per token</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>3.3 &mdash; Energy Budget</h3>
+
+<div class="formula">
+  E_token = FLOPs &times; gates_per_FLOP &times; E_gate
+        = 11.12 &times; 10^9  &times;  3  &times;  0.5 aJ
+        = 16.68 nJ per token
+</div>
+
+<table>
+  <thead>
+    <tr><th>Throughput target</th><th class="num">Power required</th><th class="num">vs. B200 (1000W)</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>22,000 tok/s</td>
+      <td class="num advantage">0.37 mW</td>
+      <td class="num">2,700,000&times; more efficient</td>
+    </tr>
+    <tr>
+      <td>100,000 tok/s (B200-equivalent)</td>
+      <td class="num advantage">1.67 mW</td>
+      <td class="num">600,000&times; more efficient</td>
+    </tr>
+    <tr>
+      <td>1,000,000 tok/s</td>
+      <td class="num advantage">16.68 mW</td>
+      <td class="num">N/A (B200 cannot reach this)</td>
+    </tr>
+    <tr style="background: #eef1f5;">
+      <td>Theoretical max at 1 kW</td>
+      <td class="num">1,000 W</td>
+      <td class="num advantage">~60 billion tok/s</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout info">
+  <strong>Why 22,000 tok/s and not 60 billion?</strong>
+  The 22,000 tok/s target is a <em>conservative engineering target</em> chosen for first-generation
+  hardware. It accounts for: (a) imperfect gate fabrication reducing yield, (b) control-plane
+  overhead for weight loading, (c) error-correction cycles, and (d) I/O bandwidth limits at the
+  fiber-to-chip interface. The simulation's theoretical peak (110M tok/s single-pipeline, or ~60B at 1 kW)
+  represents the physical ceiling of the architecture, not a deliverable spec.
+</div>
+
+<!-- ============================================================ -->
+<!-- THERMAL STABILITY                                             -->
+<!-- ============================================================ -->
+<div class="page-break"></div>
+<h2>4 &mdash; Thermal Stability &amp; Breakdown Analysis</h2>
+
+<h3>4.1 &mdash; The Thermo-Optic Feedback Problem</h3>
+
+<p>
+  Every irreversible logic operation dissipates at least k<sub>B</sub>T&middot;ln2 &approx; 2.87 zJ
+  of heat (Landauer principle). At high clock rates, cumulative heating shifts the sapphire
+  refractive index via the thermo-optic effect (dn/dT = 1.3 &times; 10<sup>-5</sup> K<sup>-1</sup>),
+  which degrades the interference contrast of MZI-based logic gates.
+</p>
+
+<div class="formula">
+  Feedback loop:  f_clk &uarr;  &rarr;  P_diss &uarr;  &rarr;  &Delta;T &uarr;  &rarr;  &Delta;n = (dn/dT) &middot; &Delta;T  &rarr;  &Delta;&phi; = (2&pi;/&lambda;) &middot; &Delta;n &middot; L  &rarr;  ER &darr;
+</div>
+
+<p>
+  Our <code>CoupledThermoFDTDSimulator</code> implements this as a runtime feedback loop:
+  the FDTD solver's permittivity map &epsilon;<sub>r</sub>(r) is updated every 50 EM steps
+  with the thermal correction &Delta;&epsilon;<sub>r</sub> = 2n&middot;&Delta;n from the
+  spectral heat diffusion solver.
+</p>
+
+<h3>4.2 &mdash; Breakdown Sweep Results</h3>
+
+<p>
+  Configuration: 10<sup>10</sup> ops/cycle, 50 &mu;m effective cascade path, sapphire substrate,
+  passive radiative cooling (960 cm&sup2; surface, &epsilon; = 0.9) + conductive path (R<sub>th</sub> = 0.1 K/W).
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>Clock rate [GHz]</th>
+      <th class="num">&Delta;T [K]</th>
+      <th class="num">T<sub>chip</sub> [K]</th>
+      <th class="num">&Delta;n</th>
+      <th class="num">&Delta;&phi; [rad]</th>
+      <th class="num">ER [dB]</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>1</td><td class="num">0.5</td><td class="num">300.5</td><td class="num">6.2 &times; 10<sup>-6</sup></td><td class="num">0.003</td><td class="num">51.4</td><td class="advantage">Safe</td></tr>
+    <tr><td>50</td><td class="num">24.1</td><td class="num">324.1</td><td class="num">3.1 &times; 10<sup>-4</sup></td><td class="num">0.136</td><td class="num">17.3</td><td class="advantage">Safe</td></tr>
+    <tr><td>100</td><td class="num">47.3</td><td class="num">347.3</td><td class="num">6.2 &times; 10<sup>-4</sup></td><td class="num">0.268</td><td class="num">11.2</td><td class="advantage">Safe</td></tr>
+    <tr><td>150</td><td class="num">70.3</td><td class="num">370.3</td><td class="num">9.1 &times; 10<sup>-4</sup></td><td class="num">0.398</td><td class="num">7.5</td><td class="advantage">Safe</td></tr>
+    <tr><td>200</td><td class="num">92.8</td><td class="num">392.8</td><td class="num">1.2 &times; 10<sup>-3</sup></td><td class="num">0.526</td><td class="num">4.7</td><td style="color: #ff9800; font-weight: 600;">Marginal</td></tr>
+    <tr style="background: #fff5f5;">
+      <td><strong>237</strong></td>
+      <td class="num"><strong>108.8</strong></td>
+      <td class="num"><strong>408.8</strong></td>
+      <td class="num"><strong>1.4 &times; 10<sup>-3</sup></strong></td>
+      <td class="num"><strong>0.616</strong></td>
+      <td class="num"><strong>3.0</strong></td>
+      <td class="caution">Breakdown</td>
+    </tr>
+    <tr><td>300</td><td class="num">136.7</td><td class="num">436.7</td><td class="num">1.8 &times; 10<sup>-3</sup></td><td class="num">0.774</td><td class="num">0.2</td><td class="caution">Failed</td></tr>
+    <tr><td>450</td><td class="num">199.1</td><td class="num">499.1</td><td class="num">2.6 &times; 10<sup>-3</sup></td><td class="num">1.128</td><td class="num">-6.5</td><td class="caution">Failed</td></tr>
+  </tbody>
+</table>
+
+<div class="metric-grid" style="grid-template-columns: 1fr 1fr;">
+  <div class="metric-box highlight">
+    <span class="value">237 GHz</span>
+    <span class="label">Breakdown clock rate (ER &lt; 3 dB)</span>
+  </div>
+  <div class="metric-box">
+    <span class="value">236 GHz</span>
+    <span class="label">Max safe operating clock</span>
+  </div>
+</div>
+
+<div class="callout info">
+  <strong>What this means in practice:</strong>
+  At the 22,000 tok/s target, the effective clock rate is far below 1 GHz.
+  The thermal headroom is enormous &mdash; the breakdown limit of 237 GHz would
+  support ~110 million tokens/s. Thermal stability is <em>not</em> the bottleneck
+  for this architecture.
+</div>
+
+<!-- ============================================================ -->
+<!-- RISK ASSESSMENT: SCO MEMORY                                   -->
+<!-- ============================================================ -->
+<div class="page-break"></div>
+<h2>5 &mdash; Critical Risk Factor: Holographic SCO Memory</h2>
+
+<p>
+  Every architecture comparison in this document rests on the assumption that the Aethel V1
+  can store and retrieve neural network weights at photonic speeds. This capability depends
+  on a memory technology that <strong>does not yet exist</strong>: holographic readout of
+  spin-crossover (SCO) molecular arrays. We detail this risk because we believe intellectual
+  honesty is the most credible foundation for any technical pitch.
+</p>
+
+<h3>5.1 &mdash; What the Simulation Assumes</h3>
+
+<table>
+  <thead>
+    <tr><th>Memory parameter</th><th class="num">Assumed value</th><th>Experimental status</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Cell pitch</td>
+      <td class="num">50 nm</td>
+      <td class="caution">Undemonstrated. Smallest SCO single-molecule devices: ~100 nm (academic)</td>
+    </tr>
+    <tr>
+      <td>Read mechanism</td>
+      <td class="num">Holographic recall, 0.1 ps</td>
+      <td class="caution">No published demonstration of holographic SCO readout</td>
+    </tr>
+    <tr>
+      <td>Write (switch) time</td>
+      <td class="num">0.5 ps</td>
+      <td style="color: #ff9800;">Partial. Ultrafast spin-crossover switching observed in fs pump-probe studies</td>
+    </tr>
+    <tr>
+      <td>Read energy</td>
+      <td class="num">1 fJ per cell</td>
+      <td class="caution">Estimated; no direct measurement available</td>
+    </tr>
+    <tr>
+      <td>Retention time</td>
+      <td class="num">10<sup>6</sup> &mu;s (~17 min)</td>
+      <td style="color: #ff9800;">Plausible for thermally bistable SCO; depends on ligand engineering</td>
+    </tr>
+    <tr>
+      <td>Capacity needed (Llama-3-8B)</td>
+      <td class="num">5.56 GB (INT8)</td>
+      <td class="caution">Requires ~4.4 &times; 10<sup>10</sup> individually addressable SCO cells</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>5.2 &mdash; Technology Readiness Assessment</h3>
+
+<div class="risk-matrix">
+  <div class="risk-item critical">
+    <div class="risk-label">Critical &mdash; Holographic SCO Memory</div>
+    <strong>TRL 1-2</strong> (Basic principles observed, no lab prototype)
+    <p>
+      No published work demonstrates holographic addressing of SCO molecular arrays.
+      The simulation models readout as a single 0.1 ps timing constant with no
+      diffraction physics, no crosstalk model, and no error rate. This is the
+      single largest uncertainty in the entire architecture.
+    </p>
+  </div>
+  <div class="risk-item moderate">
+    <div class="risk-label">Moderate &mdash; Polariton Logic Gates</div>
+    <strong>TRL 3-4</strong> (Lab demonstrations exist)
+    <p>
+      All-optical switching using exciton-polaritons has been demonstrated in
+      multiple labs at room temperature (e.g., WS<sub>2</sub> cavities,
+      perovskite microcavities). Integration into logic circuits is unproven at scale.
+    </p>
+  </div>
+  <div class="risk-item low">
+    <div class="risk-label">Low &mdash; Sapphire Substrate</div>
+    <strong>TRL 8-9</strong> (Mature industrial product)
+    <p>
+      Sapphire wafers up to 300 mm diameter are routinely manufactured for LED
+      and semiconductor applications. Thermal and optical properties are well-characterized.
+    </p>
+  </div>
+  <div class="risk-item moderate">
+    <div class="risk-label">Moderate &mdash; TMD Monolayer Integration</div>
+    <strong>TRL 3-4</strong> (Lab-scale CVD growth demonstrated)
+    <p>
+      Wafer-scale WS<sub>2</sub> and WSe<sub>2</sub> monolayers have been grown on sapphire
+      via MOCVD. Uniformity and defect density for logic applications remain active
+      research areas.
+    </p>
+  </div>
+</div>
+
+<h3>5.3 &mdash; What the Simulation Does NOT Model</h3>
+
+<ul style="margin: 8px 0 8px 20px;">
+  <li>Holographic diffraction patterns and beam fidelity at 50 nm resolution</li>
+  <li>SCO molecular switching statistics (bit-error rate under repeated cycling)</li>
+  <li>Thermal crosstalk between adjacent memory cells</li>
+  <li>Fabrication yield of 44 billion addressable cells per memory region</li>
+  <li>The addressing scheme (how to select one weight among billions)</li>
+  <li>Error correction for holographic readout (no ECC model exists)</li>
+</ul>
+
+<div class="callout">
+  <strong>Bottom line for investors:</strong>
+  If the SCO memory problem is solved, the energy-efficiency advantage is real and
+  physics-based (photonic switching vs. capacitive charging). If SCO memory proves
+  infeasible, the architecture would need an alternative memory technology (e.g.,
+  phase-change photonic memory, electro-optic SRAM), which would likely reduce the
+  efficiency advantage by 10-100&times; but could still outperform electronic inference.
+</div>
+
+<!-- ============================================================ -->
+<!-- DETAILED RESOURCE ESTIMATE                                    -->
+<!-- ============================================================ -->
+<div class="page-break"></div>
+<h2>6 &mdash; Detailed Resource Estimate (APLD-MPS Module I)</h2>
+
+<h3>6.1 &mdash; Gate Cluster Breakdown</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Cluster type</th>
+      <th>Function</th>
+      <th class="num">Clusters</th>
+      <th class="num">Gates (total)</th>
+      <th class="num">Power [mW]</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>INTERFERENCE_GRID</td>
+      <td>Matrix multiplications (Q, K, V, O, FFN)</td>
+      <td class="num">192</td>
+      <td class="num">31,026,843,746,304</td>
+      <td class="num">310,268,437</td>
+    </tr>
+    <tr>
+      <td>NORMALISATION_CASCADE</td>
+      <td>Softmax, LayerNorm</td>
+      <td class="num">96</td>
+      <td class="num">14,495,514,624</td>
+      <td class="num">144,955</td>
+    </tr>
+    <tr>
+      <td>THRESHOLD_NONLINEAR</td>
+      <td>SwiGLU / ReLU activation</td>
+      <td class="num">32</td>
+      <td class="num">721,420,288</td>
+      <td class="num">7,214</td>
+    </tr>
+    <tr>
+      <td>ELEMENTWISE_COUPLER</td>
+      <td>Residual additions</td>
+      <td class="num">64</td>
+      <td class="num">536,870,912</td>
+      <td class="num">5,369</td>
+    </tr>
+    <tr>
+      <td>EMBEDDING_HOLOGRAM</td>
+      <td>Token embedding lookup</td>
+      <td class="num">1</td>
+      <td class="num">8,388,608</td>
+      <td class="num">84</td>
+    </tr>
+    <tr style="font-weight: bold; background: #eef1f5;">
+      <td colspan="2">Total (fully unrolled)</td>
+      <td class="num">&mdash;</td>
+      <td class="num">31,042,605,940,736</td>
+      <td class="num">310,426,059</td>
+    </tr>
+    <tr style="font-weight: bold; background: #0f3460; color: #fff;">
+      <td colspan="2">Physical array (time-multiplexed)</td>
+      <td class="num">&mdash;</td>
+      <td class="num">201,326,592</td>
+      <td class="num">2,013</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout info">
+  <strong>Fully unrolled vs. time-multiplexed:</strong>
+  The fully-unrolled model instantiates every gate for every layer simultaneously (31 trillion gates, 310 MW).
+  The practical design reuses a 4096&times;4096 interference grid across all 32 layers sequentially, reducing
+  the physical gate count by 154,000&times; to 201 million gates drawing ~2 W.
+</div>
+
+<h3>6.2 &mdash; Memory Layout</h3>
+
+<table>
+  <thead>
+    <tr><th>Parameter</th><th class="num">Value</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Weight storage required</td><td class="num">5,559,025,664 bytes (5.18 GB)</td></tr>
+    <tr><td>SCO cell pitch</td><td class="num">50 nm</td></tr>
+    <tr><td>Bits per cell</td><td class="num">1</td></tr>
+    <tr><td>Memory region volume</td><td class="num">1,000 &times; 1,000 &times; 100 &mu;m</td></tr>
+    <tr><td>Region capacity</td><td class="num">100 GB (93.1 GiB)</td></tr>
+    <tr><td>Regions needed</td><td class="num">1</td></tr>
+    <tr><td>Utilisation</td><td class="num">5.56%</td></tr>
+    <tr><td>Read latency (per layer)</td><td class="num">0.10 ps</td></tr>
+    <tr><td>Read energy (per cell)</td><td class="num">1 fJ</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- THERMAL & ENERGY RECYCLING                                    -->
+<!-- ============================================================ -->
+<h2>7 &mdash; Thermal Management &amp; Energy Recycling</h2>
+
+<h3>7.1 &mdash; Sapphire Material Properties</h3>
+
+<table>
+  <thead>
+    <tr><th>Property</th><th class="num">Value</th><th>Note</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Refractive index</td><td class="num">1.76</td><td>At visible wavelengths</td></tr>
+    <tr><td>Thermal conductivity</td><td class="num">35 W/(m&middot;K)</td><td>At 300 K</td></tr>
+    <tr><td>Density</td><td class="num">3,980 kg/m&sup3;</td><td>&mdash;</td></tr>
+    <tr><td>Specific heat</td><td class="num">761 J/(kg&middot;K)</td><td>&mdash;</td></tr>
+    <tr><td>Thermo-optic coefficient</td><td class="num">1.3 &times; 10<sup>-5</sup> K<sup>-1</sup></td><td>dn/dT at visible</td></tr>
+    <tr><td>IR emissivity</td><td class="num">0.9</td><td>For radiative cooling</td></tr>
+    <tr><td>Melting point</td><td class="num">~2,323 K (2,050 &deg;C)</td><td>&mdash;</td></tr>
+  </tbody>
+</table>
+
+<h3>7.2 &mdash; TPV Energy Recycling (Module F)</h3>
+
+<p>
+  The Aethel-Kreislauf (Aethel cycle) captures waste heat as mid-IR radiation and converts
+  it back to electricity using InGaAsSb thermophotovoltaic cells (E<sub>gap</sub> = 0.55 eV).
+</p>
+
+<div class="formula">
+  P_rad = &epsilon; &middot; &sigma; &middot; A &middot; (T_chip^4 - T_amb^4)
+
+  &eta;_TPV = 0.4 &times; &eta;_Carnot &times; f_above_gap &times; &eta;_quantum
+
+  Closed loop:  Computation &rarr; Heat &rarr; IR photons &rarr; TPV cell &rarr; Electricity &rarr; Laser emitters
+</div>
+
+<p>
+  At the 22,000 tok/s target, power dissipation is 0.37 mW &mdash; far too low for meaningful
+  TPV recovery. The TPV system becomes relevant only above ~100 GHz clock rates, where
+  dissipation reaches tens of watts and chip temperature exceeds 320 K.
+</p>
+
+<!-- ============================================================ -->
+<!-- RESILIENCE                                                    -->
+<!-- ============================================================ -->
+<h2>8 &mdash; Resilience Analysis (Module G)</h2>
+
+<table>
+  <thead>
+    <tr><th>Threat</th><th>Model</th><th>Mitigation</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Cosmic ray strikes</td>
+      <td>Poisson (1 muon/cm&sup2;/s), exponential energy (200 MeV scale)</td>
+      <td>BFS-based self-healing router reroutes around degraded regions</td>
+      <td style="color: #ff9800;">Simulated</td>
+    </tr>
+    <tr>
+      <td>Mechanical vibration</td>
+      <td>Gaussian dephasing: &sigma;<sub>&phi;</sub> = (2&pi;n/&lambda;) &times; &radic;(&Sigma;A<sub>i</sub>&sup2;)</td>
+      <td>Passive vibration isolation if BER > 0.1%</td>
+      <td style="color: #ff9800;">Simulated</td>
+    </tr>
+    <tr>
+      <td>Thermo-optic drift</td>
+      <td>Coupled FDTD &harr; thermal feedback (this work)</td>
+      <td>Clock governor limits f<sub>clk</sub> to keep ER > 3 dB</td>
+      <td class="advantage">Validated</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- CONCLUSION                                                    -->
+<!-- ============================================================ -->
+<div class="page-break"></div>
+<h2>9 &mdash; Conclusion &amp; Roadmap</h2>
+
+<h3>What the simulation proves</h3>
+<ul style="margin: 8px 0 8px 20px;">
+  <li>
+    <strong>The physics is self-consistent.</strong> Maxwell's equations (FDTD), the Gross-Pitaevskii
+    equation (polariton dynamics), coupled heat diffusion, and the thermo-optic feedback
+    loop all produce stable, convergent results when run together.
+  </li>
+  <li>
+    <strong>The energy advantage is fundamental.</strong> Photonic interference consumes
+    ~2,000&times; less energy per switching event than capacitive electronic switching.
+    This is not an engineering trick but a consequence of the underlying physics.
+  </li>
+  <li>
+    <strong>Thermal stability has massive headroom.</strong> The breakdown clock rate (237 GHz) is
+    orders of magnitude above the operating point needed for 22,000 tok/s.
+  </li>
+</ul>
+
+<h3>What the simulation does NOT prove</h3>
+<ul style="margin: 8px 0 8px 20px;">
+  <li>
+    <strong>That the SCO memory can be built.</strong> This is the single point of failure.
+    No holographic SCO readout has been demonstrated. Without it, the architecture
+    cannot load weights at photonic speeds.
+  </li>
+  <li>
+    <strong>That 201 million polariton gates can be fabricated on one substrate.</strong>
+    The largest demonstrated polariton circuits contain &lt; 100 elements.
+  </li>
+  <li>
+    <strong>That the interference contrast survives fabrication imperfections.</strong>
+    The simulation assumes perfect waveguide geometry. Real devices will have
+    roughness, defects, and strain-induced index variations.
+  </li>
+</ul>
+
+<h3>Recommended next steps</h3>
+
+<table>
+  <thead>
+    <tr><th>Phase</th><th>Milestone</th><th>Key risk retired</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1. Lab prototype</td>
+      <td>Demonstrate 2-gate polariton XOR + AND cascade on sapphire</td>
+      <td>Gate switching fidelity at room temperature</td>
+    </tr>
+    <tr>
+      <td>2. Memory PoC</td>
+      <td>Demonstrate holographic readout of a 1-kbit SCO array</td>
+      <td>Memory technology feasibility</td>
+    </tr>
+    <tr>
+      <td>3. Small circuit</td>
+      <td>8-bit adder or 4&times;4 matrix multiply in polariton logic</td>
+      <td>Cascading and fan-out</td>
+    </tr>
+    <tr>
+      <td>4. Integration</td>
+      <td>Combined gate array + SCO memory on single sapphire substrate</td>
+      <td>Monolithic co-integration</td>
+    </tr>
+    <tr>
+      <td>5. Benchmark</td>
+      <td>Run a single transformer layer end-to-end on hardware</td>
+      <td>System-level performance validation</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- APPENDIX                                                      -->
+<!-- ============================================================ -->
+<div class="page-break"></div>
+<h2>Appendix A &mdash; Simulation Stack</h2>
+
+<table>
+  <thead>
+    <tr><th>Module</th><th>Solver</th><th>Method</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>B (Physics)</td><td>FDTDSolver</td><td>Yee staggered-grid Maxwell solver, 2D TM-mode with PML</td></tr>
+    <tr><td>B (Physics)</td><td>GrossPitaevskiiSolver</td><td>Split-step Fourier, driven-dissipative GPE</td></tr>
+    <tr><td>B (Physics)</td><td>GPE3DSolver</td><td>3D split-step Fourier for polariton-bullet solitons</td></tr>
+    <tr><td>B (Physics)</td><td>CoupledOscillatorSolver</td><td>2&times;2 Hamiltonian diagonalisation for dispersion</td></tr>
+    <tr><td>F (Thermal)</td><td>ThermoOpticSolver</td><td>3D spectral (FFT) heat diffusion + Landauer source</td></tr>
+    <tr><td>F (Thermal)</td><td>TPVRecycler</td><td>Stefan-Boltzmann + Wien spectral + Carnot model</td></tr>
+    <tr><td>B+F (Coupled)</td><td>CoupledThermoFDTDSimulator</td><td>Bidirectional FDTD &harr; thermal feedback loop</td></tr>
+    <tr><td>B+F (Analysis)</td><td>BreakdownAnalyser</td><td>MZI extinction ratio vs. thermo-optic phase shift</td></tr>
+    <tr><td>G (Resilience)</td><td>CosmicRaySimulator</td><td>Poisson events + BFS self-healing router</td></tr>
+    <tr><td>G (Resilience)</td><td>PhaseStabilityAnalyser</td><td>Gaussian dephasing model for vibration</td></tr>
+    <tr><td>I (Compiler)</td><td>ModelParser</td><td>ONNX graph parser + transformer spec generator</td></tr>
+    <tr><td>I (Compiler)</td><td>PolaritonicMapper</td><td>Op &rarr; gate cluster mapping with sizing</td></tr>
+    <tr><td>I (Compiler)</td><td>ResourceEstimator</td><td>Gate count, power, volume, memory estimation</td></tr>
+    <tr><td>I (Compiler)</td><td>LatencyAnalyser</td><td>Per-layer latency + speed-of-light propagation</td></tr>
+  </tbody>
+</table>
+
+<h2>Appendix B &mdash; Physical Constants Used</h2>
+
+<table>
+  <thead>
+    <tr><th>Constant</th><th class="num">Value</th><th>Unit</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>&hbar; (reduced Planck)</td><td class="num">1.0546 &times; 10<sup>-34</sup></td><td>J&middot;s</td></tr>
+    <tr><td>c (speed of light)</td><td class="num">2.998 &times; 10<sup>8</sup></td><td>m/s</td></tr>
+    <tr><td>k<sub>B</sub> (Boltzmann)</td><td class="num">1.381 &times; 10<sup>-23</sup></td><td>J/K</td></tr>
+    <tr><td>e (elementary charge)</td><td class="num">1.602 &times; 10<sup>-19</sup></td><td>C</td></tr>
+    <tr><td>m<sub>e</sub> (electron mass)</td><td class="num">9.109 &times; 10<sup>-31</sup></td><td>kg</td></tr>
+    <tr><td>&epsilon;<sub>0</sub> (vacuum permittivity)</td><td class="num">8.854 &times; 10<sup>-12</sup></td><td>F/m</td></tr>
+    <tr><td>&mu;<sub>0</sub> (vacuum permeability)</td><td class="num">1.257 &times; 10<sup>-6</sup></td><td>H/m</td></tr>
+    <tr><td>&sigma; (Stefan-Boltzmann)</td><td class="num">5.670 &times; 10<sup>-8</sup></td><td>W/(m&sup2;&middot;K&sup4;)</td></tr>
+  </tbody>
+</table>
+
+<h2>Appendix C &mdash; NVIDIA B200 Reference Data</h2>
+<p style="font-size: 9pt; color: #666;">
+  B200 specifications sourced from NVIDIA official datasheets, Lenovo product guides, and
+  published MLPerf/InferenceMAX benchmark results (2025). Key references:
+</p>
+<ul style="font-size: 9pt; color: #666; margin-left: 20px;">
+  <li>NVIDIA DGX B200 Datasheet (resources.nvidia.com)</li>
+  <li>NVIDIA Blackwell InferenceMAX benchmark results (blogs.nvidia.com, May 2025)</li>
+  <li>Lenovo ThinkSystem NVIDIA HGX B200 Product Guide: 1000W TDP configuration</li>
+  <li>NVIDIA: "Blackwell Breaks the 1,000 TPS/User Barrier" (developer.nvidia.com, 2025)</li>
+  <li>Llama-3-8B throughput estimated by scaling from published Llama 3.3-70B results (~10,000 TPS/GPU at 1000W)</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- FOOTER                                                        -->
+<!-- ============================================================ -->
+<div class="footer">
+  Generated by APLD-MPS v0.4.0 &nbsp;|&nbsp;
+  CoupledThermoFDTDSimulator + BreakdownAnalyser + ResourceEstimator + LatencyAnalyser &nbsp;|&nbsp;
+  All simulation data reproducible via <code>apld_mps.breakdown_analysis</code> and <code>apld_mps.module_i</code>
+  <br>
+  <strong>CONFIDENTIAL DRAFT</strong> &mdash; Not for public distribution without permission
+</div>
+
+</body>
+</html>

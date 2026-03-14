@@ -20,6 +20,7 @@ from apld_mps.module_f.heat_optics import ThermoOpticConfig
 from apld_mps.module_f.tpv_recycler import TPVConfig
 from apld_mps.module_d.mapper_3d import AutoMapper3D
 from apld_mps.module_g.phase_stability import VibrationProfile
+from apld_mps.module_j.engine import AFEE, AFEEConfig, InferenceMode
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -428,6 +429,151 @@ with bot_right:
         st.warning("Aktive Vibrationsisolation empfohlen!")
     else:
         st.success("Isolation nicht erforderlich")
+
+# ---------------------------------------------------------------------------
+# Sektion 7: AFEE — Physics-Aware Chat Interface (Module J)
+# ---------------------------------------------------------------------------
+st.markdown("---")
+st.subheader("AFEE — Physics-Aware Inference Engine")
+
+# AFEE session state
+if "afee" not in st.session_state:
+    afee_cfg = AFEEConfig(
+        n_layers=2, d_model=64, d_ff=256, n_heads=4, vocab_size=256,
+        mode=InferenceMode.PHYSICS_FULL, seed=42,
+    )
+    afee = AFEE(afee_cfg)
+    afee.load_weights()
+    st.session_state.afee = afee
+    st.session_state.chat_history = []
+
+afee: AFEE = st.session_state.afee
+
+afee_left, afee_right = st.columns([2, 1])
+
+with afee_left:
+    st.markdown("**Chat-Konsole**")
+
+    # Mode selector
+    mode_choice = st.radio(
+        "Inference-Modus",
+        ["Physics Full", "Reversibel", "Standard"],
+        horizontal=True,
+    )
+    mode_map = {
+        "Physics Full": InferenceMode.PHYSICS_FULL,
+        "Reversibel": InferenceMode.REVERSIBLE,
+        "Standard": InferenceMode.STANDARD,
+    }
+    afee.cfg.mode = mode_map[mode_choice]
+
+    # Coherence slider (simulates Module G)
+    coherence = st.slider(
+        "Sektor-Koharenz (Module G)", 0.0, 1.0, 1.0, 0.01,
+        help="Unter 0.8: kosmische Strahlung injiziert Rauschen in die Inferenz",
+    )
+    afee.set_coherence(coherence)
+
+    # Chat input
+    user_input = st.text_input("Eingabe (wird als Token-IDs kodiert):", key="afee_chat_input")
+    if st.button("Senden") and user_input:
+        # Encode input as byte values (simple tokenisation)
+        token_ids = [min(b, afee.cfg.vocab_size - 1) for b in user_input.encode("utf-8")]
+
+        # Reset thermal state for fresh inference
+        afee.reset_thermal()
+
+        # Run generation
+        generated = afee.generate(token_ids, max_tokens=20, temperature=0.8)
+
+        # Decode output (skip prompt tokens)
+        output_ids = generated[len(token_ids):]
+        output_bytes = bytes([min(t, 127) for t in output_ids])
+        try:
+            output_text = output_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            output_text = repr(output_bytes)
+
+        # Get fidelity from last forward pass
+        last_result = afee.forward(generated[-min(len(generated), 10):])
+        fidelity = last_result.fidelity
+
+        st.session_state.chat_history.append({
+            "user": user_input,
+            "response": output_text,
+            "fidelity": fidelity.overall_fidelity,
+            "temperature_K": fidelity.peak_temperature_K,
+            "is_breakdown": fidelity.is_breakdown,
+        })
+
+    # Display chat history
+    for entry in st.session_state.chat_history[-5:]:
+        st.markdown(f"> **User:** {entry['user']}")
+        if entry["is_breakdown"]:
+            st.error(f"AFEE: [THERMAL BREAKDOWN - NaN] T={entry['temperature_K']:.1f} K")
+        else:
+            fid_color = "green" if entry["fidelity"] > 0.9 else "orange" if entry["fidelity"] > 0.5 else "red"
+            st.markdown(
+                f"**AFEE:** {entry['response']} "
+                f"<span style='color:{fid_color}; font-size:0.8em;'>"
+                f"[Fidelity: {entry['fidelity']:.1%}]</span>",
+                unsafe_allow_html=True,
+            )
+
+with afee_right:
+    st.markdown("**Fidelity-Meter**")
+
+    # Get current fidelity
+    fid = afee._compute_fidelity()
+
+    # Overall fidelity gauge
+    fig_gauge = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=fid.overall_fidelity * 100,
+        title={"text": "Gesamt-Fidelity"},
+        gauge={
+            "axis": {"range": [0, 100]},
+            "bar": {"color": "cyan"},
+            "steps": [
+                {"range": [0, 50], "color": "rgba(255,0,0,0.3)"},
+                {"range": [50, 80], "color": "rgba(255,165,0,0.3)"},
+                {"range": [80, 100], "color": "rgba(0,255,0,0.3)"},
+            ],
+            "threshold": {
+                "line": {"color": "red", "width": 4},
+                "thickness": 0.75,
+                "value": 50,
+            },
+        },
+    ))
+    fig_gauge.update_layout(
+        height=200, margin=dict(l=20, r=20, t=40, b=10),
+        paper_bgcolor="rgb(20,20,40)", font_color="white",
+    )
+    st.plotly_chart(fig_gauge, use_container_width=True)
+
+    # Sub-fidelity bars
+    st.markdown("**Komponenten:**")
+    st.progress(fid.thermal_fidelity, text=f"Thermal: {fid.thermal_fidelity:.1%}")
+    st.progress(fid.coherence_fidelity, text=f"Koharenz: {fid.coherence_fidelity:.1%}")
+    st.progress(fid.reversibility_fidelity, text=f"Reversibel: {fid.reversibility_fidelity:.1%}")
+
+    # Temperature
+    st.metric("T_chip", f"{fid.peak_temperature_K:.1f} K")
+    st.metric("Phase Error", f"{fid.phase_error_rad:.4f} rad")
+
+    if fid.is_breakdown:
+        st.error("THERMAL BREAKDOWN!")
+
+    # Reversibility stats
+    rev = afee._rev.report
+    if rev.total_ops > 0:
+        st.caption(
+            f"Ops: {rev.total_ops} | "
+            f"Reversibel: {rev.reversible_ops} | "
+            f"Bits erased: {rev.bits_erased} | "
+            f"Entropy: {rev.entropy_J:.2e} J"
+        )
 
 # ---------------------------------------------------------------------------
 # Footer: Overall status

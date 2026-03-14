@@ -268,6 +268,17 @@ class BreakdownAnalyser:
     thermal index drift shifts the interference fringe, reducing contrast.
 
     ER(Δφ) = 10·log₁₀[ cos²(Δφ/2) / sin²(Δφ/2) ]  (for ideal MZI)
+
+    Reversible logic:
+        When ``reversible_fraction > 0`` a portion of the operations are
+        implemented with reversible gates (Toffoli / Fredkin) that erase no
+        bits and therefore produce *zero* Landauer entropy heat.  Only the
+        irreversible fraction contributes to P_diss:
+
+            P_diss = f_clk · N_ops · E_op · (1 - reversible_fraction)
+
+        At ``reversible_fraction = 1.0`` all computation is information-
+        preserving and the thermodynamic heat floor vanishes entirely.
     """
 
     def __init__(
@@ -283,7 +294,10 @@ class BreakdownAnalyser:
         thermal_resistance_K_W: float = 0.1,
         min_extinction_ratio_dB: float = 3.0,
         ambient_temperature_K: float = T_ROOM,
+        reversible_fraction: float = 0.0,
     ) -> None:
+        if not 0.0 <= reversible_fraction <= 1.0:
+            raise ValueError("reversible_fraction must be in [0, 1]")
         self.dn_dT = dn_dT
         self.interaction_length_m = interaction_length_nm * NM_TO_M
         self.wavelength_m = wavelength_nm * NM_TO_M
@@ -294,6 +308,7 @@ class BreakdownAnalyser:
         self.thermal_resistance = thermal_resistance_K_W
         self.min_er_dB = min_extinction_ratio_dB
         self.T_amb = ambient_temperature_K
+        self.reversible_fraction = reversible_fraction
 
         # Stefan-Boltzmann for radiative cooling
         self._sigma = 5.670374419e-8
@@ -302,12 +317,16 @@ class BreakdownAnalyser:
     def _equilibrium_delta_T(self, clock_GHz: float) -> float:
         """Find ΔT where dissipated power = radiative + conductive cooling.
 
-        P_diss = f_clk · N_ops · E_op
+        P_diss = f_clk · N_ops · E_op · (1 - reversible_fraction)
         P_cool = ε·σ·A·((T_amb+ΔT)⁴ - T_amb⁴) + ΔT/R_th
+
+        Reversible gates erase no bits and therefore contribute zero
+        Landauer heat.  Only the irreversible fraction dissipates.
 
         Solved by bisection.
         """
-        P_diss = clock_GHz * 1e9 * self.n_ops_per_cycle * self.energy_per_op_J
+        irreversible = 1.0 - self.reversible_fraction
+        P_diss = clock_GHz * 1e9 * self.n_ops_per_cycle * self.energy_per_op_J * irreversible
 
         dT_lo = 0.0
         dT_hi = 2000.0

@@ -198,3 +198,48 @@ class TestBreakdownAnalyser:
         er = analyser._extinction_ratio_dB(np.pi / 4)
         # At π/4, cos²=sin²=0.5 → ER = 0 dB
         assert er == pytest.approx(0.0, abs=0.01)
+
+
+class TestReversibleBreakdown:
+    """Tests for reversible-logic extensions of the breakdown analyser."""
+
+    def test_fully_reversible_zero_delta_T(self):
+        """100 % reversible → zero Landauer heat → ΔT = 0."""
+        analyser = BreakdownAnalyser(reversible_fraction=1.0)
+        dT = analyser._equilibrium_delta_T(500.0)
+        assert dT == pytest.approx(0.0, abs=0.01)
+
+    def test_half_reversible_halves_delta_T(self):
+        """50 % reversible → half the heat → lower ΔT."""
+        irr = BreakdownAnalyser(reversible_fraction=0.0)
+        half = BreakdownAnalyser(reversible_fraction=0.5)
+        dT_irr = irr._equilibrium_delta_T(200.0)
+        dT_half = half._equilibrium_delta_T(200.0)
+        assert dT_half < dT_irr
+        # Due to nonlinear cooling (T⁴), halving heat does not exactly halve ΔT
+        # but the reduction must be significant.
+        assert dT_half < 0.7 * dT_irr
+
+    def test_reversible_raises_breakdown_clock(self):
+        """More reversible gates → less heat → higher breakdown clock."""
+        irr = BreakdownAnalyser(reversible_fraction=0.0).sweep(
+            clock_max_GHz=1000.0, n_points=50,
+        )
+        rev = BreakdownAnalyser(reversible_fraction=0.5).sweep(
+            clock_max_GHz=1000.0, n_points=50,
+        )
+        assert rev.breakdown_clock_GHz > irr.breakdown_clock_GHz
+
+    def test_fully_reversible_no_breakdown_in_range(self):
+        """At 100 % reversible, no breakdown should occur up to 1 THz."""
+        result = BreakdownAnalyser(reversible_fraction=1.0).sweep(
+            clock_max_GHz=1000.0, n_points=50,
+        )
+        # All extinction ratios should remain high (> threshold)
+        assert all(er > 3.0 for er in result.sweep_extinction_ratio_dB)
+
+    def test_invalid_fraction_raises(self):
+        with pytest.raises(ValueError, match="reversible_fraction"):
+            BreakdownAnalyser(reversible_fraction=1.5)
+        with pytest.raises(ValueError, match="reversible_fraction"):
+            BreakdownAnalyser(reversible_fraction=-0.1)

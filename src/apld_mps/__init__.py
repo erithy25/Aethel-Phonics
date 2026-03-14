@@ -16,4 +16,12 @@ Modules:
     I — AI Tensor Compiler
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
+
+from .breakdown_analysis import (  # noqa: E402
+    BreakdownAnalyser,
+    BreakdownResult,
+    CoupledConfig,
+    CoupledStepResult,
+    CoupledThermoFDTDSimulator,
+)

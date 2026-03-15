@@ -39,6 +39,8 @@ from .resilience_center import (
 )
 from .rl_status import RLOptimizerPanel, TrainingProgress, OptimiserState
 
+from ..constants import EV_TO_J, FS_TO_S, NM_TO_M
+from ..module_c.laser_source import LaserSource, LaserPulse
 from ..module_d.mapper_3d import VolumetricLayout
 from ..module_f.heat_optics import ThermoOpticConfig
 from ..module_f.tpv_recycler import TPVConfig
@@ -180,14 +182,27 @@ class AethelDashboard:
         density_3d: np.ndarray | None = None,
         time_ps: float = 0.0,
         n_operations: int = 0,
+        laser_source: LaserSource | None = None,
+        f_clk_GHz: float = 0.0,
     ) -> None:
         """Advance one simulation cycle across all subsystems.
 
         This is the main tick function called by the simulation loop:
         1. Update field overlay in viewport.
         2. Feed heat into Kreislauf and advance thermal.
-        3. Record I/O snapshot.
-        4. Capture animation frame.
+        3. Compute laser input power: ``Σ E_pulse × f_clk``.
+        4. Pass total power as ``source_q`` into the thermal solver so
+           that the breakdown algorithm can trigger at ~237 GHz.
+        5. Record I/O snapshot & capture animation frame.
+
+        Parameters:
+            density_3d: 3D polariton density field for viewport overlay.
+            time_ps: Current simulation time [ps].
+            n_operations: Number of gate operations (Landauer heat).
+            laser_source: :class:`LaserSource` containing active pulses
+                whose energy is summed and converted to input power.
+            f_clk_GHz: Clock rate [GHz].  Multiplied with total pulse
+                energy to obtain the input power ``P = Σ E_pulse × f_clk``.
         """
         self._mode = DashboardMode.SIMULATION
 
@@ -198,7 +213,27 @@ class AethelDashboard:
             intensity = np.abs(density_3d) ** 2 if np.iscomplexobj(density_3d) else density_3d
             self.kreislauf.inject_heat(intensity_field=intensity, n_operations=n_operations)
 
-        self.kreislauf.advance_thermal()
+        # ---------------------------------------------------------------
+        # Module C → Module F coupling: laser energy → thermal power
+        # ---------------------------------------------------------------
+        # Sum the energy of every active LaserPulse:
+        #   E_pulse [J] = intensity [W/cm²] × 1e4 [→ W/m²]
+        #                 × π × waist² [m²] × duration [s]
+        # Total input power:
+        #   P_total [W] = Σ E_pulse × f_clk [Hz]
+        # ---------------------------------------------------------------
+        source_q_W = 0.0
+        if laser_source is not None and f_clk_GHz > 0.0:
+            f_clk_Hz = f_clk_GHz * 1e9
+            total_pulse_energy_J = 0.0
+            for pulse in laser_source.pulses:
+                intensity_W_m2 = pulse.intensity_W_cm2 * 1e4
+                beam_area_m2 = np.pi * (pulse.waist_nm * NM_TO_M) ** 2
+                duration_s = pulse.duration_fs * FS_TO_S
+                total_pulse_energy_J += intensity_W_m2 * beam_area_m2 * duration_s
+            source_q_W = total_pulse_energy_J * f_clk_Hz
+
+        self.kreislauf.advance_thermal(source_q_W=source_q_W)
 
         # Feed thermal back to viewport
         if self._initialised:

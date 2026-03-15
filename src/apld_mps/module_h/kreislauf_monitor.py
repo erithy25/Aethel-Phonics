@@ -11,6 +11,7 @@ from enum import Enum, auto
 
 import numpy as np
 
+from ..constants import NM_TO_M
 from ..module_f.heat_optics import ThermoOpticSolver, ThermoOpticConfig
 from ..module_f.tpv_recycler import TPVRecycler, TPVConfig, StabilityResult
 
@@ -155,10 +156,25 @@ class KreislaufMonitor:
         if n_operations > 0:
             self._thermo_solver.add_landauer_heat(n_operations)
 
-    def advance_thermal(self, n_steps: int = 1) -> None:
-        """Advance the thermal simulation."""
+    def advance_thermal(
+        self, n_steps: int = 1, source_q_W: float = 0.0,
+    ) -> None:
+        """Advance the thermal simulation.
+
+        Parameters:
+            n_steps: Number of thermal time steps to advance.
+            source_q_W: Total input power [W] to inject as a uniform
+                volumetric heat source before advancing.  This is typically
+                the laser pump power: ``Σ E_pulse × f_clk``.
+        """
         if not self._initialised:
             raise RuntimeError("Call initialise() first.")
+        if source_q_W > 0.0:
+            # Distribute power uniformly as volumetric heat [W/m³]
+            vol_m3 = (
+                np.prod(np.array(self._thermo_cfg.grid_size_nm)) * NM_TO_M ** 3
+            )
+            self._thermo_solver._heat_source += source_q_W / vol_m3
         self._thermo_solver.advance(n_steps)
 
     @property

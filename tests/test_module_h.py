@@ -19,6 +19,7 @@ from apld_mps.module_h.resilience_center import ResilienceCenter, ResilienceStat
 from apld_mps.module_h.rl_status import RLOptimizerPanel, OptimiserState
 from apld_mps.module_h.dashboard import AethelDashboard, DashboardMode
 
+from apld_mps.module_c.laser_source import LaserSource, LaserPulse
 from apld_mps.module_d.mapper_3d import AutoMapper3D, VolumetricLayout
 from apld_mps.module_f.heat_optics import ThermoOpticConfig
 from apld_mps.module_g.phase_stability import VibrationProfile
@@ -481,3 +482,91 @@ class TestAethelDashboard:
         state = dash.get_state()
         assert state.throughput.input_Gbps == pytest.approx(100.0)
         assert len(state.coupling.interfaces) == 1
+
+
+# ---------------------------------------------------------------------------
+# Laser → Thermal coupling (Module C ↔ F ↔ H)
+# ---------------------------------------------------------------------------
+
+class TestLaserThermalCoupling:
+    """Verify that laser pulse energy flows into the thermal solver."""
+
+    def _make_dashboard(self) -> AethelDashboard:
+        cfg = ThermoOpticConfig(
+            grid_size_nm=(500, 500, 200),
+            grid_spacing_nm=100,
+            dt_ps=10.0,
+        )
+        dash = AethelDashboard(thermo_config=cfg)
+        dash.initialise()
+        return dash
+
+    def _make_laser(self, n_pulses: int = 2) -> LaserSource:
+        src = LaserSource()
+        for _ in range(n_pulses):
+            src.add_pulse(LaserPulse(
+                energy_eV=1.72,
+                intensity_W_cm2=1e4,
+                duration_fs=100.0,
+                waist_nm=500.0,
+            ))
+        return src
+
+    def test_no_laser_no_heating(self):
+        """Without laser source, temperature stays at ambient."""
+        dash = self._make_dashboard()
+        dash.simulation_step(time_ps=1.0)
+        assert dash.kreislauf.temperature_3d.max() == pytest.approx(300.0)
+
+    def test_laser_injects_heat(self):
+        """With a laser source and clock rate, temperature must rise."""
+        dash = self._make_dashboard()
+        laser = self._make_laser()
+        # Run several steps at a moderate clock rate
+        for t in range(50):
+            dash.simulation_step(
+                time_ps=float(t),
+                laser_source=laser,
+                f_clk_GHz=100.0,
+            )
+        peak_T = dash.kreislauf.temperature_3d.max()
+        assert peak_T > 300.0, "Laser energy must heat the chip"
+
+    def test_higher_clock_more_heat(self):
+        """Doubling f_clk must produce more heating."""
+        dash_lo = self._make_dashboard()
+        dash_hi = self._make_dashboard()
+        laser = self._make_laser()
+        for t in range(30):
+            dash_lo.simulation_step(
+                time_ps=float(t), laser_source=laser, f_clk_GHz=50.0,
+            )
+            dash_hi.simulation_step(
+                time_ps=float(t), laser_source=laser, f_clk_GHz=200.0,
+            )
+        assert dash_hi.kreislauf.temperature_3d.max() > dash_lo.kreislauf.temperature_3d.max()
+
+    def test_more_pulses_more_heat(self):
+        """More active pulses → more total energy → hotter."""
+        dash_1 = self._make_dashboard()
+        dash_4 = self._make_dashboard()
+        laser_1 = self._make_laser(n_pulses=1)
+        laser_4 = self._make_laser(n_pulses=4)
+        for t in range(30):
+            dash_1.simulation_step(
+                time_ps=float(t), laser_source=laser_1, f_clk_GHz=100.0,
+            )
+            dash_4.simulation_step(
+                time_ps=float(t), laser_source=laser_4, f_clk_GHz=100.0,
+            )
+        assert dash_4.kreislauf.temperature_3d.max() > dash_1.kreislauf.temperature_3d.max()
+
+    def test_zero_clock_no_heating(self):
+        """Laser present but f_clk=0 must not inject heat."""
+        dash = self._make_dashboard()
+        laser = self._make_laser()
+        for t in range(20):
+            dash.simulation_step(
+                time_ps=float(t), laser_source=laser, f_clk_GHz=0.0,
+            )
+        assert dash.kreislauf.temperature_3d.max() == pytest.approx(300.0)

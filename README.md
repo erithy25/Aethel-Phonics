@@ -21,7 +21,35 @@ structures at room temperature.
 
 ## Quick Start
 
+### Dashboard lokal starten (empfohlen)
+
 ```bash
-pip install -e ".[dev]"
-pytest
+# Einzeiler — macht alles automatisch:
+chmod +x run_local.sh && ./run_local.sh
 ```
+
+Das Skript erstellt ein Virtual Environment, installiert alle Abhängigkeiten
+und startet das vollständige Command & Control Dashboard unter
+**http://localhost:8501**.
+
+### Manuelles Setup
+
+```bash
+# 1. Virtual Environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2. Abhängigkeiten (inkl. Dashboard)
+pip install -e ".[dev,dashboard]"
+
+# 3. Tests
+pytest
+
+# 4. Dashboard starten
+streamlit run src/apld_mps/module_h/streamlit_app.py
+```
+
+### Voraussetzungen
+
+- Python 3.10+
+- Kein GPU nötig — alle Simulationen laufen auf CPU

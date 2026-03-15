@@ -89,6 +89,9 @@ class ResourceEstimator:
             values leave more room for routing waveguides.
     """
 
+    # Maximum wafer dimension: 300 mm = 300e6 nm
+    _MAX_WAFER_NM: float = 300_000_000.0  # 300 mm
+
     def __init__(
         self,
         cell_spec: SCOCellSpec | None = None,
@@ -97,11 +100,13 @@ class ResourceEstimator:
             1_000_000.0, 1_000_000.0, 100_000.0,
         ),
         packing_efficiency: float = 0.5,
+        max_wafer_nm: float = 300_000_000.0,
     ) -> None:
         self.cell_spec = cell_spec or SCOCellSpec()
         self.weight_bits = weight_bits
         self.memory_region_volume_nm = memory_region_volume_nm
         self.packing_efficiency = packing_efficiency
+        self.max_wafer_nm = max_wafer_nm
 
     def estimate(
         self,
@@ -120,16 +125,27 @@ class ResourceEstimator:
         total_gates = mapping.total_gate_count
         total_power = mapping.total_power_mw
 
-        # --- Monolith volume ---
-        # XY: pack gates in a square grid
+        # --- Monolith volume (with max-wafer constraint & 3D stacking) ---
         gate_area = _GATE_XY_NM * _GATE_XY_NM
         total_area = total_gates * gate_area / self.packing_efficiency
         side_nm = math.sqrt(total_area)
 
-        # Z: number of layers from the mapping
+        # Z: start with layers from the mapping
         n_layers = max(mapping.total_layer_span, 1)
-        z_nm = n_layers * _GATE_Z_NM
 
+        # Enforce max-wafer constraint: if XY exceeds the wafer limit,
+        # use 3D stacking (increase layer_count) instead of expanding area.
+        max_side = self.max_wafer_nm
+        if side_nm > max_side:
+            # How many gates fit on one wafer layer?
+            max_area = max_side * max_side
+            gates_per_layer = max_area * self.packing_efficiency / gate_area
+            # How many additional z-layers do we need?
+            extra_layers = math.ceil(total_gates / max(gates_per_layer, 1))
+            n_layers = max(n_layers, extra_layers)
+            side_nm = max_side
+
+        z_nm = n_layers * _GATE_Z_NM
         volume_nm = (side_nm, side_nm, z_nm)
         nm_to_mm = 1e-6
         volume_mm = tuple(v * nm_to_mm for v in volume_nm)

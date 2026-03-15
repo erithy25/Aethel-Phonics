@@ -114,7 +114,7 @@ class ResilienceCenter:
     def __init__(
         self,
         volume_nm: tuple[float, float, float] = (
-            400_000_000.0, 400_000_000.0, 400_000_000.0
+            300_000_000.0, 300_000_000.0, 10_000_000.0
         ),
         router_resolution_nm: float = 1_000_000.0,
         waveguide_length_nm: float = 10_000.0,
@@ -122,9 +122,10 @@ class ResilienceCenter:
         wavelength_nm: float = 720.0,
         ber_warning_threshold: float = 1e-6,
         disruption_warning_threshold: float = 0.01,
+        stress_mode: bool = True,
     ) -> None:
         self.volume_nm = volume_nm
-        self._cosmic_sim = CosmicRaySimulator(volume_nm)
+        self._cosmic_sim = CosmicRaySimulator(volume_nm, stress_mode=stress_mode)
         self._router = SelfHealingRouter(volume_nm, router_resolution_nm)
         self._phase_analyser = PhaseStabilityAnalyser(
             waveguide_length_nm, refractive_index, wavelength_nm
@@ -156,6 +157,10 @@ class ResilienceCenter:
     @property
     def intensity_multiplier(self) -> float:
         return self._cosmic_sim.intensity_multiplier
+
+    def set_stress_mode(self, enabled: bool) -> None:
+        """Enable/disable cosmic-ray stress mode (100× flux)."""
+        self._cosmic_sim.stress_mode = enabled
 
     # --- Per-step cosmic ray generation ---
 

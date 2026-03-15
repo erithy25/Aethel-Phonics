@@ -86,9 +86,9 @@ class VolumetricLayout:
     placed_gates: list[PlacedGate3D] = field(default_factory=list)
     wires: list[Wire3D] = field(default_factory=list)
     volume_nm: tuple[float, float, float] = (
-        400_000_000.0,  # 40 cm
-        400_000_000.0,
-        400_000_000.0,
+        300_000_000.0,  # 300 mm (max wafer)
+        300_000_000.0,
+        10_000_000.0,   # 10 mm (3D stack height)
     )
     thermal_map: dict[str, float] = field(default_factory=dict)
 
@@ -229,7 +229,7 @@ class AutoMapper3D:
         self,
         library: GateLibrary | None = None,
         volume_nm: tuple[float, float, float] = (
-            400_000_000.0, 400_000_000.0, 400_000_000.0
+            300_000_000.0, 300_000_000.0, 10_000_000.0
         ),
         min_bend_radius_nm: float = 5000.0,
     ) -> None:

@@ -188,7 +188,7 @@ class AethelDashboard:
         thermo_config: ThermoOpticConfig | None = None,
         tpv_config: TPVConfig | None = None,
         volume_nm: tuple[float, float, float] = (
-            400_000_000.0, 400_000_000.0, 400_000_000.0
+            300_000_000.0, 300_000_000.0, 10_000_000.0
         ),
         memory_read_rate_Gbps: float = 100_000.0,
         network_bandwidth_Gbps: float = 10_000.0,
@@ -346,7 +346,24 @@ class AethelDashboard:
         # ===================================================================
         # Stage 2: Thermal injection [F]
         # ===================================================================
-        self.kreislauf.advance_thermal(source_q_W=source_q_W)
+        # Compute gate-switching power: P_gate = n_ops × E_gate × f_clk
+        # where E_gate = 0.5 aJ (attojoule) per gate operation.
+        _ENERGY_PER_GATE_J = 0.5e-18  # 0.5 aJ
+        gate_power_W = 0.0
+        if n_operations > 0 and f_clk_GHz > 0.0:
+            gate_power_W = n_operations * _ENERGY_PER_GATE_J * f_clk_GHz * 1e9
+
+        # Total heat source: laser absorption + gate switching dissipation
+        total_heat_W = source_q_W + gate_power_W
+
+        # Inject gate heat into the Kreislauf thermal solver
+        if self._initialised and gate_power_W > 0.0:
+            solver = self.kreislauf.solver
+            vol_m3 = np.prod(np.array(solver.cfg.grid_size_nm)) * NM_TO_M ** 3
+            if vol_m3 > 0:
+                solver._heat_source += gate_power_W / vol_m3
+
+        self.kreislauf.advance_thermal(source_q_W=total_heat_W)
 
         # Read thermal state
         peak_T = 300.0

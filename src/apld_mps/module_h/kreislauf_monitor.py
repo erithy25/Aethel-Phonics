@@ -114,6 +114,11 @@ class KreislaufMonitor:
     def is_initialised(self) -> bool:
         return self._initialised
 
+    @property
+    def solver(self) -> ThermoOpticSolver:
+        """Access the underlying thermal solver."""
+        return self._thermo_solver
+
     # --- Thermal heatmap ---
 
     def _alert_level(self, peak_K: float) -> ThermalAlertLevel:

@@ -603,9 +603,9 @@ class TestCosmicRayIntegration:
         return dash
 
     def test_intensity_slider_default(self):
-        """Default intensity multiplier is 1.0."""
+        """Default intensity multiplier is 100.0 (stress mode for live demo)."""
         dash = self._make_dashboard_with_layout()
-        assert dash.resilience.intensity_multiplier == 1.0
+        assert dash.resilience.intensity_multiplier == 100.0
 
     def test_set_intensity_slider(self):
         """Dashboard.set_cosmic_intensity forwards to ResilienceCenter."""

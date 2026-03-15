@@ -332,6 +332,40 @@ class AFEE:
             ids.append(next_token)
         return ids
 
+    def generate_text(
+        self,
+        prompt: str,
+        max_tokens: int = 50,
+    ) -> str:
+        """Generate degraded text using physics-aware char-level emulation.
+
+        Instead of a full language model, this uses a small static
+        vocabulary and coherence-driven character degradation to produce
+        readable-but-degraded text that visually demonstrates the effect
+        of polariton physics on inference quality.
+
+        At high fidelity (>0.9), the output sentence is mostly readable.
+        At low fidelity (<0.3), characters decay into bit-flipped
+        substitutions (similar to leetspeak or garbled text).
+
+        Parameters:
+            prompt: Input text string.
+            max_tokens: Maximum characters to generate.
+
+        Returns:
+            The degraded output string.
+        """
+        emulator = _CharLevelEmulator(seed=self.cfg.seed)
+
+        # Run a forward pass to get the current fidelity state
+        prompt_ids = [ord(c) % self.cfg.vocab_size for c in prompt]
+        if not prompt_ids:
+            prompt_ids = [0]
+        result = self.forward(prompt_ids)
+        fidelity = result.fidelity.overall_fidelity
+
+        return emulator.generate_degraded(prompt, fidelity, max_tokens)
+
     def reset_thermal(self) -> None:
         """Cool down the thermal solver (reset to ambient)."""
         self._drift.reset()
@@ -403,3 +437,122 @@ def _softmax_1d(x: np.ndarray) -> np.ndarray:
     shifted = x - np.max(x)
     exp_x = np.exp(shifted)
     return exp_x / np.sum(exp_x)
+
+
+# ---------------------------------------------------------------------------
+# Char-level emulator for physics-aware text degradation
+# ---------------------------------------------------------------------------
+
+# Static vocabulary: common English sentences for demonstration
+_STATIC_SENTENCES = [
+    "The polariton gate switches at femtosecond speed in sapphire crystal. ",
+    "Quantum coherence enables massively parallel optical computation. ",
+    "Light pulses propagate through the waveguide lattice carrying data. ",
+    "Thermal equilibrium maintains gate fidelity below breakdown temperature. ",
+    "Interference patterns encode matrix multiplications in the optical domain. ",
+    "Holographic memory stores neural network weights in spin-crossover cells. ",
+    "The Aethel chip processes language models at the speed of light. ",
+    "Exciton-polariton condensates form bistable switches for logic gates. ",
+]
+
+# Bit-flip substitution map: visually similar characters
+_BIT_FLIP_MAP: dict[str, str] = {
+    "a": "4", "A": "4", "e": "3", "E": "3",
+    "i": "1", "I": "!", "o": "0", "O": "0",
+    "s": "5", "S": "$", "t": "7", "T": "7",
+    "l": "|", "g": "9", "b": "6", "B": "8",
+    "z": "2", "Z": "2", "n": "^", "r": "®",
+    "c": "(", "d": ")", "h": "#", "u": "µ",
+    "m": "^^", "w": "vv", "p": "¶", "q": "9",
+    "f": "ƒ", "v": "√", "x": "×", "y": "¥",
+    "k": "κ", "j": "]",
+}
+
+
+class _CharLevelEmulator:
+    """Physics-aware character-level text emulator.
+
+    Uses the overall fidelity score to determine how much each character
+    in a generated sentence is degraded:
+
+    * **fidelity >= 0.9** — text is fully readable, occasional typo.
+    * **fidelity ~0.5** — noticeable corruption, some leetspeak-style subs.
+    * **fidelity <= 0.3** — heavy corruption, mostly garbled/unreadable.
+    """
+
+    def __init__(self, seed: int = 42) -> None:
+        self._rng = np.random.default_rng(seed)
+
+    def generate_degraded(
+        self,
+        prompt: str,
+        fidelity: float,
+        max_chars: int = 200,
+    ) -> str:
+        """Generate a text response and degrade it based on fidelity.
+
+        Parameters:
+            prompt: Input text (used to seed sentence selection).
+            fidelity: Overall inference fidelity [0, 1].
+            max_chars: Maximum output length.
+
+        Returns:
+            Degraded text string.
+        """
+        fidelity = max(0.0, min(1.0, fidelity))
+
+        # Select sentences based on prompt hash
+        seed_val = sum(ord(c) for c in prompt) if prompt else 0
+        rng = np.random.default_rng(seed_val)
+        indices = rng.permutation(len(_STATIC_SENTENCES))
+
+        # Build clean output from static vocabulary
+        clean = ""
+        for idx in indices:
+            clean += _STATIC_SENTENCES[idx]
+            if len(clean) >= max_chars:
+                break
+        # Repeat if needed
+        while len(clean) < max_chars:
+            clean += _STATIC_SENTENCES[int(rng.integers(len(_STATIC_SENTENCES)))]
+        clean = clean[:max_chars]
+
+        # Apply physics-aware degradation
+        # Corruption probability per character = 1 - fidelity
+        corruption_prob = 1.0 - fidelity
+
+        result = []
+        for ch in clean:
+            if self._rng.random() < corruption_prob:
+                result.append(self._degrade_char(ch))
+            else:
+                result.append(ch)
+
+        return "".join(result)
+
+    def _degrade_char(self, ch: str) -> str:
+        """Degrade a single character using bit-flip simulation.
+
+        Preference order:
+        1. Visually similar substitution (leetspeak-style).
+        2. Case flip.
+        3. Random printable ASCII character.
+        """
+        roll = self._rng.random()
+
+        if roll < 0.5 and ch in _BIT_FLIP_MAP:
+            # Visually similar substitution
+            return _BIT_FLIP_MAP[ch]
+        elif roll < 0.7 and ch.isalpha():
+            # Case flip
+            return ch.swapcase()
+        elif roll < 0.85:
+            # Nearby ASCII character (±1..3)
+            offset = int(self._rng.integers(-3, 4))
+            new_ord = ord(ch) + offset
+            if 32 <= new_ord <= 126:
+                return chr(new_ord)
+            return ch
+        else:
+            # Random printable ASCII
+            return chr(int(self._rng.integers(33, 127)))

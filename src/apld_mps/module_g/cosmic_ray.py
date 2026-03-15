@@ -41,18 +41,32 @@ class CosmicRaySimulator:
 
     Models the energy deposition via the Bethe-Bloch formula (simplified),
     computing the disruption zone size and coherence loss.
+
+    Parameters:
+        volume_nm: Physical volume of the sapphire crystal [nm].
+        flux_per_cm2_s: Natural cosmic-ray flux [events/(cm²·s)].
+        stress_mode: When True, applies a 100× flux multiplier for
+            live-demo stress testing.  Events will appear roughly
+            every 5–10 seconds of wall-clock simulation.
     """
+
+    # Stress-mode multiplier: 100× natural flux
+    _STRESS_MULTIPLIER: float = 100.0
 
     def __init__(
         self,
         volume_nm: tuple[float, float, float] = (
-            400_000_000.0, 400_000_000.0, 400_000_000.0
+            300_000_000.0, 300_000_000.0, 10_000_000.0
         ),
         flux_per_cm2_s: float = 1.0,  # ~1 muon/cm²/s at sea level
+        stress_mode: bool = False,
     ) -> None:
         self.volume_nm = volume_nm
         self.flux = flux_per_cm2_s
-        self._intensity_multiplier: float = 1.0
+        self._stress_mode = stress_mode
+        self._intensity_multiplier: float = (
+            self._STRESS_MULTIPLIER if stress_mode else 1.0
+        )
         self._events: list[CosmicRayEvent] = []
 
     @property
@@ -66,12 +80,29 @@ class CosmicRaySimulator:
             raise ValueError("intensity_multiplier must be >= 0")
         self._intensity_multiplier = value
 
+    @property
+    def stress_mode(self) -> bool:
+        """Whether stress-mode (100× flux) is active."""
+        return self._stress_mode
+
+    @stress_mode.setter
+    def stress_mode(self, value: bool) -> None:
+        self._stress_mode = value
+        if value:
+            self._intensity_multiplier = max(
+                self._intensity_multiplier, self._STRESS_MULTIPLIER
+            )
+
     def generate_events(
         self,
         duration_s: float = 1.0,
         seed: int = 42,
     ) -> list[CosmicRayEvent]:
         """Generate Poisson-distributed cosmic ray events.
+
+        The expected count scales with flux × multiplier × area × duration.
+        In stress mode the multiplier is at least 100×, so that events
+        appear frequently even at sub-nanosecond simulation steps.
 
         Returns the list of events that occur within *duration_s* seconds.
         """

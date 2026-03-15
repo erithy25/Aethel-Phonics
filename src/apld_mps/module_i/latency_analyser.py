@@ -10,6 +10,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+import warnings
+
 from ..constants import C_LIGHT, NM_TO_M, PS_TO_S
 from .model_parser import ComputeGraph, ComputeNode, OpType
 from .polaritonic_mapping import (
@@ -71,6 +73,8 @@ class LatencyReport:
     total_latency_us: float = 0.0
     tokens_per_second: float = 0.0
     speed_of_light_in_medium_m_s: float = 0.0
+    causality_warning: str | None = None
+    min_physical_latency_ps: float = 0.0
 
     def summary(self) -> str:
         lines = [
@@ -87,11 +91,18 @@ class LatencyReport:
             )
         if len(self.layer_latencies) > 3:
             lines.append(f"  ... ({len(self.layer_latencies) - 3} more layers)")
+        if self.min_physical_latency_ps > 0:
+            lines.append(
+                f"Min physical latency:     {self.min_physical_latency_ps:.2f} ps "
+                f"(light-time across monolith diagonal)"
+            )
         lines.extend([
             f"Total latency:            {self.total_latency_ps:.2f} ps "
             f"({self.total_latency_ns:.4f} ns / {self.total_latency_us:.6f} µs)",
             f"Tokens per second:        {self.tokens_per_second:,.0f}",
         ])
+        if self.causality_warning:
+            lines.append(f"WARNING: {self.causality_warning}")
         return "\n".join(lines)
 
 
@@ -166,12 +177,15 @@ class LatencyAnalyser:
         self,
         graph: ComputeGraph,
         mapping: PolaritonicMapping | None = None,
+        monolith_dims_nm: tuple[float, float, float] | None = None,
     ) -> LatencyReport:
         """Run a full latency analysis.
 
         Parameters:
             graph: Parsed computation graph.
             mapping: Pre-computed polaritonic mapping (computed if None).
+            monolith_dims_nm: (x, y, z) dimensions of the sapphire monolith [nm].
+                Used for the physical-limit (causality) check.
 
         Returns:
             :class:`LatencyReport` with per-layer breakdown and total.
@@ -260,6 +274,28 @@ class LatencyAnalyser:
         report.total_latency_ps = report.embedding_ps + sum(
             ll.total_ps for ll in report.layer_latencies
         )
+
+        # --- Physical Limit Check (Causality) ---
+        # The total latency must not be less than the time for light to
+        # traverse the diagonal of the sapphire monolith:
+        #   t_min = n / c * sqrt(x² + y² + z²)
+        if monolith_dims_nm is not None:
+            x, y, z = monolith_dims_nm
+            diagonal_m = math.sqrt(x**2 + y**2 + z**2) * NM_TO_M
+            t_min_s = (self.n_sapphire * diagonal_m) / C_LIGHT
+            t_min_ps = t_min_s / PS_TO_S
+            report.min_physical_latency_ps = t_min_ps
+
+            if report.total_latency_ps < t_min_ps:
+                report.causality_warning = (
+                    f"Violation of Causality: computed latency "
+                    f"({report.total_latency_ps:.4f} ps) is faster than "
+                    f"light traversal of monolith diagonal "
+                    f"({t_min_ps:.4f} ps). Clamping to physical minimum."
+                )
+                warnings.warn(report.causality_warning, stacklevel=2)
+                report.total_latency_ps = t_min_ps
+
         report.total_latency_ns = report.total_latency_ps * 1e-3
         report.total_latency_us = report.total_latency_ps * 1e-6
 
@@ -280,9 +316,11 @@ class LatencyAnalyser:
         d_ff: int | None = None,
         vocab_size: int = 32000,
         seq_len: int = 2048,
+        monolith_dims_nm: tuple[float, float, float] | None = None,
     ) -> LatencyReport:
         """Convenience: build graph from Transformer spec and analyse."""
         from .model_parser import ModelParser
+        from .resource_estimator import ResourceEstimator
 
         parser = ModelParser()
         graph = parser.from_transformer_spec(
@@ -294,7 +332,12 @@ class LatencyAnalyser:
             vocab_size=vocab_size,
             seq_len=seq_len,
         )
-        return self.analyse(graph)
+        # Auto-compute monolith dimensions from resource estimate if not given
+        if monolith_dims_nm is None:
+            est = ResourceEstimator()
+            res = est.estimate(graph)
+            monolith_dims_nm = res.monolith_volume_nm
+        return self.analyse(graph, monolith_dims_nm=monolith_dims_nm)
 
     @staticmethod
     def _parse_layer_index(node_id: str) -> int | None:

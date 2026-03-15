@@ -205,7 +205,8 @@ class TestPolaritonicMapper:
         node = ComputeNode(node_id="r", op_type=OpType.RELU,
                            output_shape=TensorShape(dims=(100,)))
         mapping = PolaritonicMapper().map(ComputeGraph(nodes=[node]))
-        assert mapping.total_power_mw == pytest.approx(100 * 0.01)
+        # 100 gates × 5e-7 mW/gate = 5e-5 mW (0.5 aJ @ 1 GHz per gate)
+        assert mapping.total_power_mw == pytest.approx(100 * 5e-7)
 
 
 # ========================================================================

@@ -62,8 +62,9 @@ _GATE_Z_NM = 2_000.0    # 2 µm layer height
 # (one Y-splitter + one interference zone + one detector ~ 3 gates)
 _GATES_PER_MAC = 3
 
-# Power per gate [mW] — order-of-magnitude estimate for CW polariton pump
-_POWER_PER_GATE_MW = 0.01
+# Power per gate [mW] — derived from energy_per_gate (0.5 aJ) at 1 GHz ref clock:
+#   P = 0.5e-18 J × 1e9 Hz = 5e-10 W = 5e-7 mW
+_POWER_PER_GATE_MW = 5e-7
 
 
 @dataclass

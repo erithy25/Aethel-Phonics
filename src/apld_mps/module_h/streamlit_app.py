@@ -11,6 +11,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 
+from apld_mps import __version__
 from apld_mps.module_h.dashboard import AethelDashboard, DashboardMode
 from apld_mps.module_h.kreislauf_monitor import ThermalAlertLevel
 from apld_mps.module_h.io_panel import BottleneckType
@@ -71,7 +72,7 @@ st.markdown(
 )
 st.markdown(
     "<p style='text-align:center; color:gray;'>"
-    "APLD-MPS v0.6.0 &mdash; Massively Parallel Multiphysics Simulation Suite"
+    f"APLD-MPS v{__version__} &mdash; Massively Parallel Multiphysics Simulation Suite"
     "</p>",
     unsafe_allow_html=True,
 )

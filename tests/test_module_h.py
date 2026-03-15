@@ -15,7 +15,11 @@ from apld_mps.module_h.kreislauf_monitor import (
     ThermalAlertLevel,
 )
 from apld_mps.module_h.io_panel import IOPanel, BottleneckType
-from apld_mps.module_h.resilience_center import ResilienceCenter, ResilienceStatus
+from apld_mps.module_h.resilience_center import (
+    ResilienceCenter,
+    ResilienceStatus,
+    CosmicImpactLog,
+)
 from apld_mps.module_h.rl_status import RLOptimizerPanel, OptimiserState
 from apld_mps.module_h.dashboard import AethelDashboard, DashboardMode
 
@@ -570,3 +574,87 @@ class TestLaserThermalCoupling:
                 time_ps=float(t), laser_source=laser, f_clk_GHz=0.0,
             )
         assert dash.kreislauf.temperature_3d.max() == pytest.approx(300.0)
+
+
+# ---------------------------------------------------------------------------
+# Cosmic Ray Intensity Slider & Impact Log (Module G ↔ H)
+# ---------------------------------------------------------------------------
+
+class TestCosmicRayIntegration:
+    """Verify cosmic ray slider, per-step generation, and gate-impact log."""
+
+    def _make_dashboard_with_layout(self) -> AethelDashboard:
+        cfg = ThermoOpticConfig(
+            grid_size_nm=(500, 500, 200),
+            grid_spacing_nm=100,
+        )
+        dash = AethelDashboard(
+            thermo_config=cfg,
+            volume_nm=(1_000_000.0, 1_000_000.0, 1_000_000.0),
+        )
+        dash.initialise()
+
+        mapper = AutoMapper3D(volume_nm=(1_000_000.0, 1_000_000.0, 1_000_000.0))
+        layout = mapper.map_half_adder_3d(n_episodes=5)
+        dash.load_layout(layout)
+        return dash
+
+    def test_intensity_slider_default(self):
+        """Default intensity multiplier is 1.0."""
+        dash = self._make_dashboard_with_layout()
+        assert dash.resilience.intensity_multiplier == 1.0
+
+    def test_set_intensity_slider(self):
+        """Dashboard.set_cosmic_intensity forwards to ResilienceCenter."""
+        dash = self._make_dashboard_with_layout()
+        dash.set_cosmic_intensity(1000.0)
+        assert dash.resilience.intensity_multiplier == 1000.0
+
+    def test_high_intensity_produces_events(self):
+        """With a very high multiplier, events must appear during steps."""
+        dash = self._make_dashboard_with_layout()
+        # area ≈ 0.01 cm², dt=1000 ps=1e-9 s → expected ≈ mult × 1e-11
+        # mult=1e13 → ~100 events per step
+        dash.set_cosmic_intensity(1e13)
+        all_logs: list[CosmicImpactLog] = []
+        for t in range(5):
+            logs = dash.simulation_step(time_ps=float(t), dt_ps=1000.0)
+            all_logs.extend(logs)
+        assert len(all_logs) > 0, "High intensity must produce impacts"
+
+    def test_impact_log_has_gate_id(self):
+        """Impact log entries must resolve to nearest gate_id."""
+        dash = self._make_dashboard_with_layout()
+        dash.set_cosmic_intensity(1e13)
+        all_logs: list[CosmicImpactLog] = []
+        for t in range(5):
+            all_logs.extend(dash.simulation_step(time_ps=float(t), dt_ps=1000.0))
+        assert len(all_logs) > 0
+        for log in all_logs:
+            assert log.gate_id != "UNKNOWN"
+            assert "Einschlag detektiert bei Gatter" in log.message
+
+    def test_impact_log_in_dashboard_state(self):
+        """DashboardState must contain cosmic_impact_log."""
+        dash = self._make_dashboard_with_layout()
+        dash.set_cosmic_intensity(1e12)
+        for t in range(5):
+            dash.simulation_step(time_ps=float(t), dt_ps=1.0)
+        state = dash.get_state()
+        assert hasattr(state, "cosmic_impact_log")
+        assert isinstance(state.cosmic_impact_log, list)
+
+    def test_natural_flux_few_events(self):
+        """At natural flux (multiplier=1), almost no events in tiny volume."""
+        dash = self._make_dashboard_with_layout()
+        all_logs: list[CosmicImpactLog] = []
+        for t in range(10):
+            all_logs.extend(dash.simulation_step(time_ps=float(t), dt_ps=1.0))
+        # 1 cm² area, 1e-12 s per step × 10 steps → ~1e-11 expected events
+        assert len(all_logs) == 0
+
+    def test_simulation_step_returns_logs(self):
+        """simulation_step must return a list (even if empty)."""
+        dash = self._make_dashboard_with_layout()
+        result = dash.simulation_step(time_ps=0.0, dt_ps=1.0)
+        assert isinstance(result, list)

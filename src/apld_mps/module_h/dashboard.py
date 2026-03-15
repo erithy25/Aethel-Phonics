@@ -35,6 +35,7 @@ from .resilience_center import (
     SelfHealingStatus,
     VibrationAnalyserData,
     CosmicRayTickerEntry,
+    CosmicImpactLog,
     ResilienceStatus,
 )
 from .rl_status import RLOptimizerPanel, TrainingProgress, OptimiserState
@@ -74,6 +75,7 @@ class DashboardState:
         bottleneck: Bottleneck radar data.
         coupling: Fibre coupling status.
         cosmic_ticker: Recent cosmic ray events.
+        cosmic_impact_log: Recent impact log entries with gate resolution.
         self_healing: Self-healing router status.
         vibration: Vibration analysis data.
         rl_progress: RL optimiser progress.
@@ -92,6 +94,7 @@ class DashboardState:
     bottleneck: BottleneckRadarData
     coupling: FibreCouplingStatus
     cosmic_ticker: list[CosmicRayTickerEntry]
+    cosmic_impact_log: list[CosmicImpactLog]
     self_healing: SelfHealingStatus
     vibration: VibrationAnalyserData
     rl_progress: TrainingProgress
@@ -172,8 +175,13 @@ class AethelDashboard:
     # --- Layout management ---
 
     def load_layout(self, layout: VolumetricLayout) -> None:
-        """Load a volumetric layout into the viewport."""
+        """Load a volumetric layout into the viewport and resilience center."""
         self.viewport.set_layout(layout)
+        self.resilience.set_layout(layout)
+
+    def set_cosmic_intensity(self, multiplier: float) -> None:
+        """Set the cosmic-ray intensity slider (1.0 = natural flux)."""
+        self.resilience.set_intensity_multiplier(multiplier)
 
     # --- Simulation step ---
 
@@ -181,10 +189,11 @@ class AethelDashboard:
         self,
         density_3d: np.ndarray | None = None,
         time_ps: float = 0.0,
+        dt_ps: float = 1.0,
         n_operations: int = 0,
         laser_source: LaserSource | None = None,
         f_clk_GHz: float = 0.0,
-    ) -> None:
+    ) -> list[CosmicImpactLog]:
         """Advance one simulation cycle across all subsystems.
 
         This is the main tick function called by the simulation loop:
@@ -193,16 +202,21 @@ class AethelDashboard:
         3. Compute laser input power: ``Σ E_pulse × f_clk``.
         4. Pass total power as ``source_q`` into the thermal solver so
            that the breakdown algorithm can trigger at ~237 GHz.
-        5. Record I/O snapshot & capture animation frame.
+        5. Generate cosmic ray events and log impacts near gates.
+        6. Record I/O snapshot & capture animation frame.
 
         Parameters:
             density_3d: 3D polariton density field for viewport overlay.
             time_ps: Current simulation time [ps].
+            dt_ps: Duration of this simulation step [ps].
             n_operations: Number of gate operations (Landauer heat).
             laser_source: :class:`LaserSource` containing active pulses
                 whose energy is summed and converted to input power.
             f_clk_GHz: Clock rate [GHz].  Multiplied with total pulse
                 energy to obtain the input power ``P = Σ E_pulse × f_clk``.
+
+        Returns:
+            List of :class:`CosmicImpactLog` entries generated this step.
         """
         self._mode = DashboardMode.SIMULATION
 
@@ -215,12 +229,6 @@ class AethelDashboard:
 
         # ---------------------------------------------------------------
         # Module C → Module F coupling: laser energy → thermal power
-        # ---------------------------------------------------------------
-        # Sum the energy of every active LaserPulse:
-        #   E_pulse [J] = intensity [W/cm²] × 1e4 [→ W/m²]
-        #                 × π × waist² [m²] × duration [s]
-        # Total input power:
-        #   P_total [W] = Σ E_pulse × f_clk [Hz]
         # ---------------------------------------------------------------
         source_q_W = 0.0
         if laser_source is not None and f_clk_GHz > 0.0:
@@ -235,6 +243,11 @@ class AethelDashboard:
 
         self.kreislauf.advance_thermal(source_q_W=source_q_W)
 
+        # ---------------------------------------------------------------
+        # Module G: cosmic ray generation every simulation step
+        # ---------------------------------------------------------------
+        impact_logs = self.resilience.step_cosmic_rays(dt_ps=dt_ps)
+
         # Feed thermal back to viewport
         if self._initialised:
             self.viewport.update_thermal_overlay(self.kreislauf.temperature_3d)
@@ -244,6 +257,8 @@ class AethelDashboard:
 
         # Record I/O snapshot
         self.io.record_snapshot()
+
+        return impact_logs
 
     # --- Stress test ---
 
@@ -286,6 +301,7 @@ class AethelDashboard:
             bottleneck=self.io.get_bottleneck_radar(),
             coupling=self.io.get_coupling_status(),
             cosmic_ticker=self.resilience.get_ticker(),
+            cosmic_impact_log=self.resilience.get_impact_log(),
             self_healing=self.resilience.get_self_healing_status(),
             vibration=self.resilience.get_vibration_data(),
             rl_progress=self.rl.get_progress(),

@@ -61,6 +61,31 @@ class TestCosmicRaySimulator:
         assert np.min(np.abs(result)) < 1.0
 
 
+    def test_intensity_multiplier_default(self):
+        sim = CosmicRaySimulator(volume_nm=(1_000_000, 1_000_000, 1_000_000))
+        assert sim.intensity_multiplier == 1.0
+
+    def test_intensity_multiplier_scales_events(self):
+        sim_lo = CosmicRaySimulator(
+            volume_nm=(1_000_000, 1_000_000, 1_000_000),
+            flux_per_cm2_s=100.0,
+        )
+        sim_hi = CosmicRaySimulator(
+            volume_nm=(1_000_000, 1_000_000, 1_000_000),
+            flux_per_cm2_s=100.0,
+        )
+        sim_hi.intensity_multiplier = 10.0
+        ev_lo = sim_lo.generate_events(duration_s=1.0, seed=42)
+        ev_hi = sim_hi.generate_events(duration_s=1.0, seed=42)
+        # 10× multiplier should produce roughly 10× more events
+        assert len(ev_hi) > len(ev_lo)
+
+    def test_intensity_multiplier_rejects_negative(self):
+        sim = CosmicRaySimulator(volume_nm=(1_000_000, 1_000_000, 1_000_000))
+        with pytest.raises(ValueError):
+            sim.intensity_multiplier = -1.0
+
+
 class TestSelfHealingRouter:
     def test_find_path_no_disruption(self):
         router = SelfHealingRouter(

@@ -12,6 +12,7 @@ from enum import Enum, auto
 
 import numpy as np
 
+from ..module_d.mapper_3d import PlacedGate3D, VolumetricLayout
 from ..module_g.cosmic_ray import CosmicRaySimulator, CosmicRayEvent, SelfHealingRouter
 from ..module_g.phase_stability import (
     PhaseStabilityAnalyser,
@@ -84,6 +85,25 @@ class VibrationAnalyserData:
     stability_report: StabilityReport | None
 
 
+@dataclass
+class CosmicImpactLog:
+    """Log entry for a cosmic ray impact near a gate.
+
+    Attributes:
+        timestamp_ps: Simulation time of impact [ps].
+        gate_id: Identifier of the nearest gate (e.g. ``"XOR_1"``).
+        distance_nm: Distance from the impact to the gate centre [nm].
+        energy_MeV: Particle energy [MeV].
+        message: Human-readable log line for the dashboard.
+    """
+
+    timestamp_ps: float
+    gate_id: str
+    distance_nm: float
+    energy_MeV: float
+    message: str
+
+
 class ResilienceCenter:
     """Stress test and resilience monitoring center.
 
@@ -113,8 +133,101 @@ class ResilienceCenter:
         self._disrupt_warn = disruption_warning_threshold
 
         self._ticker: list[CosmicRayTickerEntry] = []
+        self._impact_log: list[CosmicImpactLog] = []
         self._active_reroutes: int = 0
         self._latest_vib_report: StabilityReport | None = None
+        self._layout: VolumetricLayout | None = None
+        self._step_seed: int = 0
+
+    # --- Layout / intensity slider ---
+
+    def set_layout(self, layout: VolumetricLayout) -> None:
+        """Register the gate layout for nearest-gate resolution in logs."""
+        self._layout = layout
+
+    def set_intensity_multiplier(self, value: float) -> None:
+        """Set the cosmic-ray flux intensity multiplier (dashboard slider).
+
+        A value of 1.0 corresponds to natural sea-level muon flux.
+        Higher values artificially increase the rate for stress testing.
+        """
+        self._cosmic_sim.intensity_multiplier = value
+
+    @property
+    def intensity_multiplier(self) -> float:
+        return self._cosmic_sim.intensity_multiplier
+
+    # --- Per-step cosmic ray generation ---
+
+    def step_cosmic_rays(
+        self, dt_ps: float = 1.0,
+    ) -> list[CosmicImpactLog]:
+        """Generate cosmic ray events for a single simulation time step.
+
+        Called every ``simulation_step`` in the dashboard.  Returns new
+        impact-log entries with nearest-gate resolution.
+        """
+        duration_s = dt_ps * 1e-12
+        self._step_seed += 1
+        events = self._cosmic_sim.generate_events(
+            duration_s, seed=self._step_seed,
+        )
+
+        entries: list[CosmicRayTickerEntry] = []
+        logs: list[CosmicImpactLog] = []
+        for ev in events:
+            entry = CosmicRayTickerEntry(
+                timestamp_ps=ev.timestamp_ps,
+                position_nm=ev.position_nm,
+                energy_MeV=ev.energy_MeV,
+                affected_radius_nm=ev.affected_radius_nm,
+                coherence_loss=ev.coherence_loss,
+            )
+            entries.append(entry)
+            self._ticker.append(entry)
+            self._router.mark_disruption(ev)
+
+            # Resolve nearest gate
+            gate_id, dist = self._nearest_gate(ev.position_nm)
+            msg = f"Einschlag detektiert bei Gatter {gate_id}"
+            log = CosmicImpactLog(
+                timestamp_ps=ev.timestamp_ps,
+                gate_id=gate_id,
+                distance_nm=dist,
+                energy_MeV=ev.energy_MeV,
+                message=msg,
+            )
+            logs.append(log)
+            self._impact_log.append(log)
+
+        self._ticker.sort(key=lambda e: e.timestamp_ps)
+        return logs
+
+    def get_impact_log(self, last_n: int = 50) -> list[CosmicImpactLog]:
+        """Return the most recent impact log entries."""
+        return self._impact_log[-last_n:]
+
+    def _nearest_gate(
+        self, position_nm: tuple[float, float, float],
+    ) -> tuple[str, float]:
+        """Find the gate closest to *position_nm*.
+
+        Returns ``(gate_id, distance_nm)``.  If no layout is loaded,
+        returns ``("UNKNOWN", inf)``.
+        """
+        if self._layout is None or not self._layout.placed_gates:
+            return ("UNKNOWN", float("inf"))
+
+        best_id = "UNKNOWN"
+        best_dist = float("inf")
+        pos = np.array(position_nm)
+        for pg in self._layout.placed_gates:
+            centre = np.array(pg.origin_nm) + np.array(pg.footprint_nm) / 2.0
+            dist = float(np.linalg.norm(pos - centre))
+            if dist < best_dist:
+                best_dist = dist
+                best_id = pg.gate_id
+        return best_id, best_dist
 
     # --- Cosmic ray ticker ---
 

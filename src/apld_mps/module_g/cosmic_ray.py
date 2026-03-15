@@ -52,7 +52,19 @@ class CosmicRaySimulator:
     ) -> None:
         self.volume_nm = volume_nm
         self.flux = flux_per_cm2_s
+        self._intensity_multiplier: float = 1.0
         self._events: list[CosmicRayEvent] = []
+
+    @property
+    def intensity_multiplier(self) -> float:
+        """Artificial flux multiplier for stress testing (dashboard slider)."""
+        return self._intensity_multiplier
+
+    @intensity_multiplier.setter
+    def intensity_multiplier(self, value: float) -> None:
+        if value < 0.0:
+            raise ValueError("intensity_multiplier must be >= 0")
+        self._intensity_multiplier = value
 
     def generate_events(
         self,
@@ -69,7 +81,7 @@ class CosmicRaySimulator:
         area_cm2 = (
             self.volume_nm[0] * self.volume_nm[1] * (NM_TO_M * 100) ** 2
         )
-        expected = self.flux * area_cm2 * duration_s
+        expected = self.flux * self._intensity_multiplier * area_cm2 * duration_s
         n_events = rng.poisson(expected)
 
         events = []

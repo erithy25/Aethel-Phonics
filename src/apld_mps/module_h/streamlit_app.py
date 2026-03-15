@@ -20,6 +20,10 @@ from apld_mps.module_f.heat_optics import ThermoOpticConfig
 from apld_mps.module_f.tpv_recycler import TPVConfig
 from apld_mps.module_d.mapper_3d import AutoMapper3D
 from apld_mps.module_g.phase_stability import VibrationProfile
+from apld_mps.module_i.model_parser import ModelParser
+from apld_mps.module_i.polaritonic_mapping import PolaritonicMapper
+from apld_mps.module_i.resource_estimator import ResourceEstimator
+from apld_mps.module_i.latency_analyser import LatencyAnalyser
 from apld_mps.module_j.engine import AFEE, AFEEConfig, InferenceMode
 
 # ---------------------------------------------------------------------------
@@ -67,7 +71,7 @@ st.markdown(
 )
 st.markdown(
     "<p style='text-align:center; color:gray;'>"
-    "APLD-MPS v0.3 &mdash; Massively Parallel Multiphysics Simulation Suite"
+    "APLD-MPS v0.6.0 &mdash; Massively Parallel Multiphysics Simulation Suite"
     "</p>",
     unsafe_allow_html=True,
 )
@@ -364,216 +368,349 @@ with left_col:
 
 
 # ---------------------------------------------------------------------------
-# Bottom: Sektion 5 — Stress Test & Resilience Center
+# Bottom: Tabbed sections — Resilience / AI Tensor Compiler / AFEE
 # ---------------------------------------------------------------------------
 st.markdown("---")
-st.subheader("Stress-Test & Resilience Center")
 
-bot_left, bot_mid, bot_right = st.columns(3)
-
-with bot_left:
-    st.markdown("**Cosmic Ray Ticker**")
-    if st.button("1s Simulation starten"):
-        entries = dash.resilience.simulate_cosmic_rays(duration_s=1.0)
-        st.info(f"{len(entries)} Events generiert")
-
-    ticker = dash.resilience.get_ticker(10)
-    if ticker:
-        ticker_data = [
-            {
-                "t [ps]": f"{e.timestamp_ps:.0f}",
-                "E [MeV]": f"{e.energy_MeV:.1f}",
-                "r [nm]": f"{e.affected_radius_nm:.0f}",
-                "Loss": f"{e.coherence_loss:.2f}",
-            }
-            for e in ticker[-5:]
-        ]
-        st.dataframe(ticker_data, use_container_width=True, hide_index=True)
-    else:
-        st.caption("Keine Events \u2014 Simulation starten.")
-
-with bot_mid:
-    st.markdown("**Self-Healing Status**")
-    sh = dash.resilience.get_self_healing_status()
-    c7, c8 = st.columns(2)
-    c7.metric("Disrupted", f"{sh.disrupted_fraction * 100:.3f}%")
-    c8.metric("Reroutes", sh.active_reroutes)
-
-    if sh.availability_slice.size > 1:
-        fig_avail = px.imshow(
-            sh.availability_slice,
-            color_continuous_scale="RdYlGn",
-            labels=dict(color="Availability"),
-            zmin=0, zmax=1,
-        )
-        fig_avail.update_layout(height=180, margin=dict(l=0, r=0, t=10, b=0))
-        st.plotly_chart(fig_avail, use_container_width=True)
-
-with bot_right:
-    st.markdown("**Vibrations-Analyse**")
-    vib_amp = st.slider("Vibrationsamplitude [nm]", 0.01, 5.0, 0.5, 0.01)
-    vib_freq = st.slider("Frequenz [Hz]", 10.0, 1000.0, 100.0, 10.0)
-
-    if st.button("Analyse starten"):
-        profile = VibrationProfile(
-            frequencies_Hz=np.array([vib_freq]),
-            amplitudes_nm=np.array([vib_amp]),
-        )
-        data = dash.resilience.analyse_vibration(profile)
-
-    vib_data = dash.resilience.get_vibration_data()
-    c9, c10 = st.columns(2)
-    c9.metric("Phase Jitter", f"{vib_data.rms_phase_jitter_rad:.4f} rad")
-    c10.metric("BER", f"{vib_data.bit_error_probability:.2e}")
-    if vib_data.isolation_required:
-        st.warning("Aktive Vibrationsisolation empfohlen!")
-    else:
-        st.success("Isolation nicht erforderlich")
+tab_resilience, tab_tensor, tab_afee = st.tabs([
+    "Stress-Test & Resilience (Module G)",
+    "AI Tensor Compiler (Module I)",
+    "Inferenz-Interface (Module J)",
+])
 
 # ---------------------------------------------------------------------------
-# Sektion 7: AFEE — Physics-Aware Chat Interface (Module J)
+# Tab 1: Sektion 5 — Stress Test & Resilience Center
 # ---------------------------------------------------------------------------
-st.markdown("---")
-st.subheader("AFEE — Physics-Aware Inference Engine")
+with tab_resilience:
+    st.subheader("Stress-Test & Resilience Center")
 
-# AFEE session state
-if "afee" not in st.session_state:
-    afee_cfg = AFEEConfig(
-        n_layers=2, d_model=64, d_ff=256, n_heads=4, vocab_size=256,
-        mode=InferenceMode.PHYSICS_FULL, seed=42,
-    )
-    afee = AFEE(afee_cfg)
-    afee.load_weights()
-    st.session_state.afee = afee
-    st.session_state.chat_history = []
+    bot_left, bot_mid, bot_right = st.columns(3)
 
-afee: AFEE = st.session_state.afee
+    with bot_left:
+        st.markdown("**Cosmic Ray Ticker**")
+        if st.button("1s Simulation starten"):
+            entries = dash.resilience.simulate_cosmic_rays(duration_s=1.0)
+            st.info(f"{len(entries)} Events generiert")
 
-afee_left, afee_right = st.columns([2, 1])
-
-with afee_left:
-    st.markdown("**Chat-Konsole**")
-
-    # Mode selector
-    mode_choice = st.radio(
-        "Inference-Modus",
-        ["Physics Full", "Reversibel", "Standard"],
-        horizontal=True,
-    )
-    mode_map = {
-        "Physics Full": InferenceMode.PHYSICS_FULL,
-        "Reversibel": InferenceMode.REVERSIBLE,
-        "Standard": InferenceMode.STANDARD,
-    }
-    afee.cfg.mode = mode_map[mode_choice]
-
-    # Coherence slider (simulates Module G)
-    coherence = st.slider(
-        "Sektor-Koharenz (Module G)", 0.0, 1.0, 1.0, 0.01,
-        help="Unter 0.8: kosmische Strahlung injiziert Rauschen in die Inferenz",
-    )
-    afee.set_coherence(coherence)
-
-    # Chat input
-    user_input = st.text_input("Eingabe (wird als Token-IDs kodiert):", key="afee_chat_input")
-    if st.button("Senden") and user_input:
-        # Encode input as byte values (simple tokenisation)
-        token_ids = [min(b, afee.cfg.vocab_size - 1) for b in user_input.encode("utf-8")]
-
-        # Reset thermal state for fresh inference
-        afee.reset_thermal()
-
-        # Run generation
-        generated = afee.generate(token_ids, max_tokens=20, temperature=0.8)
-
-        # Decode output (skip prompt tokens)
-        output_ids = generated[len(token_ids):]
-        output_bytes = bytes([min(t, 127) for t in output_ids])
-        try:
-            output_text = output_bytes.decode("utf-8", errors="replace")
-        except Exception:
-            output_text = repr(output_bytes)
-
-        # Get fidelity from last forward pass
-        last_result = afee.forward(generated[-min(len(generated), 10):])
-        fidelity = last_result.fidelity
-
-        st.session_state.chat_history.append({
-            "user": user_input,
-            "response": output_text,
-            "fidelity": fidelity.overall_fidelity,
-            "temperature_K": fidelity.peak_temperature_K,
-            "is_breakdown": fidelity.is_breakdown,
-        })
-
-    # Display chat history
-    for entry in st.session_state.chat_history[-5:]:
-        st.markdown(f"> **User:** {entry['user']}")
-        if entry["is_breakdown"]:
-            st.error(f"AFEE: [THERMAL BREAKDOWN - NaN] T={entry['temperature_K']:.1f} K")
+        ticker = dash.resilience.get_ticker(10)
+        if ticker:
+            ticker_data = [
+                {
+                    "t [ps]": f"{e.timestamp_ps:.0f}",
+                    "E [MeV]": f"{e.energy_MeV:.1f}",
+                    "r [nm]": f"{e.affected_radius_nm:.0f}",
+                    "Loss": f"{e.coherence_loss:.2f}",
+                }
+                for e in ticker[-5:]
+            ]
+            st.dataframe(ticker_data, use_container_width=True, hide_index=True)
         else:
-            fid_color = "green" if entry["fidelity"] > 0.9 else "orange" if entry["fidelity"] > 0.5 else "red"
-            st.markdown(
-                f"**AFEE:** {entry['response']} "
-                f"<span style='color:{fid_color}; font-size:0.8em;'>"
-                f"[Fidelity: {entry['fidelity']:.1%}]</span>",
-                unsafe_allow_html=True,
+            st.caption("Keine Events \u2014 Simulation starten.")
+
+    with bot_mid:
+        st.markdown("**Self-Healing Status**")
+        sh = dash.resilience.get_self_healing_status()
+        c7, c8 = st.columns(2)
+        c7.metric("Disrupted", f"{sh.disrupted_fraction * 100:.3f}%")
+        c8.metric("Reroutes", sh.active_reroutes)
+
+        if sh.availability_slice.size > 1:
+            fig_avail = px.imshow(
+                sh.availability_slice,
+                color_continuous_scale="RdYlGn",
+                labels=dict(color="Availability"),
+                zmin=0, zmax=1,
+            )
+            fig_avail.update_layout(height=180, margin=dict(l=0, r=0, t=10, b=0))
+            st.plotly_chart(fig_avail, use_container_width=True)
+
+    with bot_right:
+        st.markdown("**Vibrations-Analyse**")
+        vib_amp = st.slider("Vibrationsamplitude [nm]", 0.01, 5.0, 0.5, 0.01)
+        vib_freq = st.slider("Frequenz [Hz]", 10.0, 1000.0, 100.0, 10.0)
+
+        if st.button("Analyse starten"):
+            profile = VibrationProfile(
+                frequencies_Hz=np.array([vib_freq]),
+                amplitudes_nm=np.array([vib_amp]),
+            )
+            data = dash.resilience.analyse_vibration(profile)
+
+        vib_data = dash.resilience.get_vibration_data()
+        c9, c10 = st.columns(2)
+        c9.metric("Phase Jitter", f"{vib_data.rms_phase_jitter_rad:.4f} rad")
+        c10.metric("BER", f"{vib_data.bit_error_probability:.2e}")
+        if vib_data.isolation_required:
+            st.warning("Aktive Vibrationsisolation empfohlen!")
+        else:
+            st.success("Isolation nicht erforderlich")
+
+# ---------------------------------------------------------------------------
+# Tab 2: AI Tensor Compiler (Module I)
+# ---------------------------------------------------------------------------
+with tab_tensor:
+    st.subheader("AI Tensor Compiler")
+
+    tc_left, tc_right = st.columns([1, 1])
+
+    with tc_left:
+        st.markdown("**Transformer-Spezifikation**")
+        tc_name = st.text_input("Modellname", value="GPT-Aethel", key="tc_name")
+        tc_layers = st.number_input("Transformer-Layers", value=12, min_value=1, max_value=128, step=1, key="tc_layers")
+        tc_d_model = st.number_input("d_model", value=768, min_value=64, step=64, key="tc_dmodel")
+        tc_n_heads = st.number_input("Attention-Heads", value=12, min_value=1, step=1, key="tc_nheads")
+        tc_d_ff = st.number_input("d_ff (0 = auto 4\u00d7d_model)", value=0, min_value=0, step=64, key="tc_dff")
+        tc_vocab = st.number_input("Vokabular", value=32000, min_value=256, step=1000, key="tc_vocab")
+        tc_seq = st.number_input("Sequenzl\u00e4nge", value=2048, min_value=64, step=64, key="tc_seq")
+
+        if st.button("Kompilieren & Analysieren", key="tc_compile"):
+            parser = ModelParser()
+            d_ff_val = int(tc_d_ff) if int(tc_d_ff) > 0 else None
+            graph = parser.from_transformer_spec(
+                name=tc_name,
+                n_layers=int(tc_layers),
+                d_model=int(tc_d_model),
+                n_heads=int(tc_n_heads),
+                d_ff=d_ff_val,
+                vocab_size=int(tc_vocab),
+                seq_len=int(tc_seq),
             )
 
-with afee_right:
-    st.markdown("**Fidelity-Meter**")
+            mapper = PolaritonicMapper()
+            mapping = mapper.map(graph)
 
-    # Get current fidelity
-    fid = afee._compute_fidelity()
+            estimator = ResourceEstimator()
+            estimate = estimator.estimate(graph, mapping)
 
-    # Overall fidelity gauge
-    fig_gauge = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=fid.overall_fidelity * 100,
-        title={"text": "Gesamt-Fidelity"},
-        gauge={
-            "axis": {"range": [0, 100]},
-            "bar": {"color": "cyan"},
-            "steps": [
-                {"range": [0, 50], "color": "rgba(255,0,0,0.3)"},
-                {"range": [50, 80], "color": "rgba(255,165,0,0.3)"},
-                {"range": [80, 100], "color": "rgba(0,255,0,0.3)"},
-            ],
-            "threshold": {
-                "line": {"color": "red", "width": 4},
-                "thickness": 0.75,
-                "value": 50,
-            },
-        },
-    ))
-    fig_gauge.update_layout(
-        height=200, margin=dict(l=20, r=20, t=40, b=10),
-        paper_bgcolor="rgb(20,20,40)", font_color="white",
-    )
-    st.plotly_chart(fig_gauge, use_container_width=True)
+            analyser = LatencyAnalyser()
+            latency = analyser.analyse(graph, mapping)
 
-    # Sub-fidelity bars
-    st.markdown("**Komponenten:**")
-    st.progress(fid.thermal_fidelity, text=f"Thermal: {fid.thermal_fidelity:.1%}")
-    st.progress(fid.coherence_fidelity, text=f"Koharenz: {fid.coherence_fidelity:.1%}")
-    st.progress(fid.reversibility_fidelity, text=f"Reversibel: {fid.reversibility_fidelity:.1%}")
+            st.session_state.tc_estimate = estimate
+            st.session_state.tc_latency = latency
+            st.session_state.tc_mapping = mapping
 
-    # Temperature
-    st.metric("T_chip", f"{fid.peak_temperature_K:.1f} K")
-    st.metric("Phase Error", f"{fid.phase_error_rad:.4f} rad")
+    with tc_right:
+        if "tc_estimate" in st.session_state:
+            est = st.session_state.tc_estimate
+            lat = st.session_state.tc_latency
+            mapping = st.session_state.tc_mapping
 
-    if fid.is_breakdown:
-        st.error("THERMAL BREAKDOWN!")
+            st.markdown(f"**Modell:** {est.model_name}")
 
-    # Reversibility stats
-    rev = afee._rev.report
-    if rev.total_ops > 0:
-        st.caption(
-            f"Ops: {rev.total_ops} | "
-            f"Reversibel: {rev.reversible_ops} | "
-            f"Bits erased: {rev.bits_erased} | "
-            f"Entropy: {rev.entropy_J:.2e} J"
+            r1, r2, r3 = st.columns(3)
+            r1.metric("Parameter", f"{est.total_parameters:,}")
+            r2.metric("FLOPs/Token", f"{est.total_flops_per_token:,}")
+            r3.metric("Polariton-Gates", f"{est.total_gate_count:,}")
+
+            r4, r5, r6 = st.columns(3)
+            r4.metric("Z-Layers", f"{est.layer_count}")
+            r5.metric("Speicher-Regionen", f"{est.memory_regions}")
+            r6.metric("Optische Leistung", f"{est.total_power_w:.2f} W")
+
+            st.markdown(
+                f"**Monolith:** {est.monolith_volume_mm[0]:.1f} \u00d7 "
+                f"{est.monolith_volume_mm[1]:.1f} \u00d7 "
+                f"{est.monolith_volume_mm[2]:.1f} mm"
+            )
+            st.markdown(
+                f"**Gewicht-Speicher:** {est.weight_storage_bytes:,} Bytes "
+                f"({est.weight_bits}-bit Quantisierung)"
+            )
+
+            st.markdown("---")
+            st.markdown("**Latenz-Analyse**")
+
+            l1, l2, l3 = st.columns(3)
+            l1.metric("Gesamtlatenz", f"{lat.total_latency_ps:.1f} ps")
+            l2.metric("Latenz (ns)", f"{lat.total_latency_ns:.4f} ns")
+            l3.metric("Tokens/s", f"{lat.tokens_per_second:,.0f}")
+
+            if lat.layer_latencies:
+                layer_data = [
+                    {
+                        "Layer": ll.layer_index,
+                        "Attn [ps]": f"{ll.attention_ps:.2f}",
+                        "FFN [ps]": f"{ll.ffn_ps:.2f}",
+                        "Mem [ps]": f"{ll.memory_read_ps:.2f}",
+                        "Prop [ps]": f"{ll.propagation_ps:.2f}",
+                        "Total [ps]": f"{ll.total_ps:.2f}",
+                    }
+                    for ll in lat.layer_latencies[:10]
+                ]
+                st.dataframe(layer_data, use_container_width=True, hide_index=True)
+                if len(lat.layer_latencies) > 10:
+                    st.caption(f"... und {len(lat.layer_latencies) - 10} weitere Layers")
+
+            # Cluster distribution bar chart
+            from collections import Counter
+            cluster_counts = Counter(c.cluster_type.name for c in mapping.clusters)
+            if cluster_counts:
+                fig_clusters = go.Figure(go.Bar(
+                    x=list(cluster_counts.keys()),
+                    y=list(cluster_counts.values()),
+                    marker_color="cyan",
+                ))
+                fig_clusters.update_layout(
+                    title="Gate-Cluster-Verteilung",
+                    height=250,
+                    margin=dict(l=40, r=10, t=40, b=30),
+                    paper_bgcolor="rgb(20,20,40)",
+                    plot_bgcolor="rgb(20,20,40)",
+                    font_color="white",
+                    xaxis_title="Cluster-Typ",
+                    yaxis_title="Anzahl",
+                )
+                st.plotly_chart(fig_clusters, use_container_width=True)
+        else:
+            st.info(
+                "Transformer-Spezifikation links eingeben und "
+                "'Kompilieren & Analysieren' klicken."
+            )
+
+# ---------------------------------------------------------------------------
+# Tab 3: Inferenz-Interface (Module J) — AFEE
+# ---------------------------------------------------------------------------
+with tab_afee:
+    st.subheader("AFEE \u2014 Physics-Aware Inference Engine")
+
+    # AFEE session state
+    if "afee" not in st.session_state:
+        afee_cfg = AFEEConfig(
+            n_layers=2, d_model=64, d_ff=256, n_heads=4, vocab_size=256,
+            mode=InferenceMode.PHYSICS_FULL, seed=42,
         )
+        afee = AFEE(afee_cfg)
+        afee.load_weights()
+        st.session_state.afee = afee
+        st.session_state.chat_history = []
+
+    afee: AFEE = st.session_state.afee
+
+    afee_left, afee_right = st.columns([2, 1])
+
+    with afee_left:
+        st.markdown("**Chat-Konsole**")
+
+        # Mode selector
+        mode_choice = st.radio(
+            "Inference-Modus",
+            ["Physics Full", "Reversibel", "Standard"],
+            horizontal=True,
+        )
+        mode_map = {
+            "Physics Full": InferenceMode.PHYSICS_FULL,
+            "Reversibel": InferenceMode.REVERSIBLE,
+            "Standard": InferenceMode.STANDARD,
+        }
+        afee.cfg.mode = mode_map[mode_choice]
+
+        # Coherence slider (simulates Module G)
+        coherence = st.slider(
+            "Sektor-Koharenz (Module G)", 0.0, 1.0, 1.0, 0.01,
+            help="Unter 0.8: kosmische Strahlung injiziert Rauschen in die Inferenz",
+        )
+        afee.set_coherence(coherence)
+
+        # Chat input
+        user_input = st.text_input("Eingabe (wird als Token-IDs kodiert):", key="afee_chat_input")
+        if st.button("Senden") and user_input:
+            # Encode input as byte values (simple tokenisation)
+            token_ids = [min(b, afee.cfg.vocab_size - 1) for b in user_input.encode("utf-8")]
+
+            # Reset thermal state for fresh inference
+            afee.reset_thermal()
+
+            # Run generation
+            generated = afee.generate(token_ids, max_tokens=20, temperature=0.8)
+
+            # Decode output (skip prompt tokens)
+            output_ids = generated[len(token_ids):]
+            output_bytes = bytes([min(t, 127) for t in output_ids])
+            try:
+                output_text = output_bytes.decode("utf-8", errors="replace")
+            except Exception:
+                output_text = repr(output_bytes)
+
+            # Get fidelity from last forward pass
+            last_result = afee.forward(generated[-min(len(generated), 10):])
+            fidelity = last_result.fidelity
+
+            st.session_state.chat_history.append({
+                "user": user_input,
+                "response": output_text,
+                "fidelity": fidelity.overall_fidelity,
+                "temperature_K": fidelity.peak_temperature_K,
+                "is_breakdown": fidelity.is_breakdown,
+            })
+
+        # Display chat history
+        for entry in st.session_state.chat_history[-5:]:
+            st.markdown(f"> **User:** {entry['user']}")
+            if entry["is_breakdown"]:
+                st.error(f"AFEE: [THERMAL BREAKDOWN - NaN] T={entry['temperature_K']:.1f} K")
+            else:
+                fid_color = "green" if entry["fidelity"] > 0.9 else "orange" if entry["fidelity"] > 0.5 else "red"
+                st.markdown(
+                    f"**AFEE:** {entry['response']} "
+                    f"<span style='color:{fid_color}; font-size:0.8em;'>"
+                    f"[Fidelity: {entry['fidelity']:.1%}]</span>",
+                    unsafe_allow_html=True,
+                )
+
+    with afee_right:
+        st.markdown("**Fidelity-Meter**")
+
+        # Get current fidelity
+        fid = afee._compute_fidelity()
+
+        # Overall fidelity gauge
+        fig_gauge = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=fid.overall_fidelity * 100,
+            title={"text": "Gesamt-Fidelity"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "cyan"},
+                "steps": [
+                    {"range": [0, 50], "color": "rgba(255,0,0,0.3)"},
+                    {"range": [50, 80], "color": "rgba(255,165,0,0.3)"},
+                    {"range": [80, 100], "color": "rgba(0,255,0,0.3)"},
+                ],
+                "threshold": {
+                    "line": {"color": "red", "width": 4},
+                    "thickness": 0.75,
+                    "value": 50,
+                },
+            },
+        ))
+        fig_gauge.update_layout(
+            height=200, margin=dict(l=20, r=20, t=40, b=10),
+            paper_bgcolor="rgb(20,20,40)", font_color="white",
+        )
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+        # Sub-fidelity bars
+        st.markdown("**Komponenten:**")
+        st.progress(fid.thermal_fidelity, text=f"Thermal: {fid.thermal_fidelity:.1%}")
+        st.progress(fid.coherence_fidelity, text=f"Koharenz: {fid.coherence_fidelity:.1%}")
+        st.progress(fid.reversibility_fidelity, text=f"Reversibel: {fid.reversibility_fidelity:.1%}")
+
+        # Temperature
+        st.metric("T_chip", f"{fid.peak_temperature_K:.1f} K")
+        st.metric("Phase Error", f"{fid.phase_error_rad:.4f} rad")
+
+        if fid.is_breakdown:
+            st.error("THERMAL BREAKDOWN!")
+
+        # Reversibility stats
+        rev = afee._rev.report
+        if rev.total_ops > 0:
+            st.caption(
+                f"Ops: {rev.total_ops} | "
+                f"Reversibel: {rev.reversible_ops} | "
+                f"Bits erased: {rev.bits_erased} | "
+                f"Entropy: {rev.entropy_J:.2e} J"
+            )
 
 # ---------------------------------------------------------------------------
 # Footer: Overall status

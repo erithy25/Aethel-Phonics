@@ -16,7 +16,7 @@ Modules:
     I — AI Tensor Compiler
 """
 
-__version__ = "0.4.0"
+__version__ = "0.6.0"
 
 from .breakdown_analysis import (  # noqa: E402
     BreakdownAnalyser,

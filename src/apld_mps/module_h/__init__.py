@@ -6,7 +6,7 @@ six sections: Digital Twin viewport, Physics control, Kreislauf thermal
 monitor, Petabit I/O, Stress test resilience center, and RL optimizer status.
 """
 
-from .dashboard import AethelDashboard, DashboardState, DashboardMode
+from .dashboard import AethelDashboard, DashboardState, DashboardMode, PhysicsLoopState
 from .viewport import (
     DigitalTwinViewport,
     ViewportSnapshot,
@@ -32,6 +32,7 @@ __all__ = [
     "AethelDashboard",
     "DashboardState",
     "DashboardMode",
+    "PhysicsLoopState",
     "DigitalTwinViewport",
     "ViewportSnapshot",
     "RenderMode",

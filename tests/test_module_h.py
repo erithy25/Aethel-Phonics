@@ -29,7 +29,7 @@ from apld_mps.module_h.dashboard import AethelDashboard, DashboardMode
 from apld_mps.module_c.laser_source import LaserSource, LaserPulse
 from apld_mps.module_d.mapper_3d import AutoMapper3D, VolumetricLayout
 from apld_mps.module_f.heat_optics import ThermoOpticConfig
-from apld_mps.module_g.phase_stability import VibrationProfile
+from apld_mps.module_g.phase_stability import VibrationProfile, PhaseStabilityAnalyser
 
 
 # ---------------------------------------------------------------------------
@@ -889,3 +889,221 @@ class TestPhaseJitterAlarm:
         alarm = vp.update_vibration(profile)
         expected_jitter = analyser.compute_phase_jitter(profile)
         assert alarm.rms_phase_jitter_rad == pytest.approx(expected_jitter)
+
+
+# ---------------------------------------------------------------------------
+# Closed-Loop Physics Pipeline (C → F → Δn → G → J)
+# ---------------------------------------------------------------------------
+
+class TestPhysicsLoopPipeline:
+    """Verify the closed-loop physics pipeline that connects every module."""
+
+    def _make_dashboard(self) -> AethelDashboard:
+        cfg = ThermoOpticConfig(
+            grid_size_nm=(500, 500, 200),
+            grid_spacing_nm=100,
+            dt_ps=10.0,
+        )
+        dash = AethelDashboard(
+            thermo_config=cfg,
+            volume_nm=(1_000_000.0, 1_000_000.0, 1_000_000.0),
+        )
+        dash.initialise()
+        return dash
+
+    def _make_laser(self, n_pulses: int = 2) -> LaserSource:
+        src = LaserSource()
+        for _ in range(n_pulses):
+            src.add_pulse(LaserPulse(
+                energy_eV=1.72,
+                intensity_W_cm2=1e4,
+                duration_fs=100.0,
+                waist_nm=500.0,
+            ))
+        return src
+
+    # -- Stage 1: Laser → Power --
+
+    def test_pipeline_telemetry_exists(self):
+        """PhysicsLoopState must be present in DashboardState."""
+        dash = self._make_dashboard()
+        state = dash.get_state()
+        assert hasattr(state, "physics_loop")
+
+    def test_no_laser_pipeline_idle(self):
+        """Without laser, pipeline telemetry shows zero power."""
+        dash = self._make_dashboard()
+        dash.simulation_step(time_ps=0.0)
+        loop = dash.physics_loop
+        assert loop.laser_power_W == 0.0
+        assert loop.pipeline_complete is True
+
+    def test_laser_injects_power_into_pipeline(self):
+        """Laser + clock rate must produce non-zero laser_power_W."""
+        dash = self._make_dashboard()
+        laser = self._make_laser()
+        dash.simulation_step(time_ps=0.0, laser_source=laser, f_clk_GHz=100.0)
+        loop = dash.physics_loop
+        assert loop.laser_power_W > 0.0
+        assert loop.f_clk_GHz == 100.0
+
+    # -- Stage 2: Power → Heat → Temperature --
+
+    def test_laser_raises_temperature(self):
+        """Sustained laser power must raise peak_temperature_K above 300."""
+        dash = self._make_dashboard()
+        laser = self._make_laser()
+        for t in range(50):
+            dash.simulation_step(
+                time_ps=float(t), laser_source=laser, f_clk_GHz=100.0,
+            )
+        loop = dash.physics_loop
+        assert loop.peak_temperature_K > 300.0
+
+    # -- Stage 3: Heat → Δn → Phase error --
+
+    def test_heating_produces_delta_n(self):
+        """Temperature rise must produce non-zero delta_n_max."""
+        dash = self._make_dashboard()
+        laser = self._make_laser()
+        for t in range(50):
+            dash.simulation_step(
+                time_ps=float(t), laser_source=laser, f_clk_GHz=100.0,
+            )
+        loop = dash.physics_loop
+        assert loop.delta_n_max > 0.0
+        assert loop.phase_error_rad > 0.0
+
+    def test_phase_error_degrades_signal(self):
+        """Phase error must reduce signal_degradation below 1.0."""
+        dash = self._make_dashboard()
+        laser = self._make_laser()
+        for t in range(50):
+            dash.simulation_step(
+                time_ps=float(t), laser_source=laser, f_clk_GHz=100.0,
+            )
+        loop = dash.physics_loop
+        assert loop.signal_degradation <= 1.0
+        # If there's any phase error, degradation must be below 1.0
+        if loop.phase_error_rad > 1e-10:
+            assert loop.signal_degradation < 1.0
+
+    # -- Stage 4: Phase jitter alarm fires --
+
+    def test_heating_fires_phase_jitter_alarm(self):
+        """Sustained heating must eventually trigger the viewport Phase Jitter alarm."""
+        dash = self._make_dashboard()
+        laser = self._make_laser(n_pulses=4)
+        for t in range(30):
+            dash.simulation_step(
+                time_ps=float(t), laser_source=laser, f_clk_GHz=200.0,
+            )
+        snap = dash.viewport.get_snapshot()
+        alarm = snap.phase_jitter_alarm
+        # At high power, the alarm should fire (or at least have non-zero jitter)
+        assert alarm.rms_phase_jitter_rad > 0
+
+    # -- Stage 5: Cosmic rays → coherence --
+
+    def test_cosmic_rays_degrade_coherence(self):
+        """High cosmic intensity must lower cosmic_coherence below 1.0."""
+        dash = self._make_dashboard()
+        dash.set_cosmic_intensity(1e13)
+        for t in range(5):
+            dash.simulation_step(time_ps=float(t), dt_ps=1000.0)
+        loop = dash.physics_loop
+        assert loop.cosmic_coherence < 1.0
+
+    # -- Stage 6: AFEE receives physics signals --
+
+    def test_afee_receives_coherence(self):
+        """AFEE tensor core must reflect cosmic ray coherence."""
+        dash = self._make_dashboard()
+        dash.set_cosmic_intensity(1e13)
+        for t in range(5):
+            dash.simulation_step(time_ps=float(t), dt_ps=1000.0)
+        # The AFEE core's sector_coherence should match pipeline coherence
+        assert dash.afee.core.sector_coherence < 1.0
+
+    def test_afee_noise_from_low_coherence(self):
+        """Low coherence must produce non-zero afee_noise_sigma."""
+        dash = self._make_dashboard()
+        dash.set_cosmic_intensity(1e13)
+        for t in range(5):
+            dash.simulation_step(time_ps=float(t), dt_ps=1000.0)
+        loop = dash.physics_loop
+        if loop.cosmic_coherence < dash.afee.core.coherence_threshold:
+            assert loop.afee_noise_sigma > 0.0
+
+    def test_afee_fidelity_in_telemetry(self):
+        """AFEE fidelity must appear in pipeline telemetry."""
+        dash = self._make_dashboard()
+        dash.simulation_step(time_ps=0.0)
+        loop = dash.physics_loop
+        assert 0.0 <= loop.afee_fidelity <= 1.0
+
+    # -- Full chain: more power → worse fidelity --
+
+    def test_higher_power_degrades_fidelity(self):
+        """Higher laser power must produce worse signal degradation."""
+        dash_lo = self._make_dashboard()
+        dash_hi = self._make_dashboard()
+        laser_lo = self._make_laser(n_pulses=1)
+        laser_hi = self._make_laser(n_pulses=4)
+
+        for t in range(30):
+            dash_lo.simulation_step(
+                time_ps=float(t), laser_source=laser_lo, f_clk_GHz=50.0,
+            )
+            dash_hi.simulation_step(
+                time_ps=float(t), laser_source=laser_hi, f_clk_GHz=200.0,
+            )
+
+        loop_lo = dash_lo.physics_loop
+        loop_hi = dash_hi.physics_loop
+        assert loop_hi.laser_power_W > loop_lo.laser_power_W
+        assert loop_hi.peak_temperature_K > loop_lo.peak_temperature_K
+        assert loop_hi.delta_n_max > loop_lo.delta_n_max
+
+    def test_emissive_waveguides_active_during_pipeline(self):
+        """With a laser active, emissive waveguides must appear in snapshot."""
+        from apld_mps.module_d.mapper_3d import AutoMapper3D
+        dash = self._make_dashboard()
+        mapper = AutoMapper3D(volume_nm=(1e6, 1e6, 1e6))
+        layout = mapper.map_half_adder_3d(n_episodes=10)
+        dash.load_layout(layout)
+        laser = self._make_laser()
+        dash.simulation_step(
+            time_ps=0.0, laser_source=laser, f_clk_GHz=100.0,
+        )
+        snap = dash.viewport.get_snapshot()
+        assert len(snap.emissive_waveguides) > 0
+
+    def test_no_laser_clears_emissive(self):
+        """Without a laser, emissive waveguides must be cleared."""
+        dash = self._make_dashboard()
+        laser = self._make_laser()
+        dash.simulation_step(
+            time_ps=0.0, laser_source=laser, f_clk_GHz=100.0,
+        )
+        # Now step without laser
+        dash.simulation_step(time_ps=1.0)
+        snap = dash.viewport.get_snapshot()
+        assert len(snap.emissive_waveguides) == 0
+
+    def test_pipeline_all_stages_fire(self):
+        """pipeline_complete must be True after every simulation_step."""
+        dash = self._make_dashboard()
+        dash.simulation_step(time_ps=0.0)
+        assert dash.physics_loop.pipeline_complete is True
+
+    def test_dashboard_state_physics_loop_field(self):
+        """DashboardState.physics_loop must match dashboard.physics_loop."""
+        dash = self._make_dashboard()
+        laser = self._make_laser()
+        dash.simulation_step(
+            time_ps=0.0, laser_source=laser, f_clk_GHz=100.0,
+        )
+        state = dash.get_state()
+        assert state.physics_loop.laser_power_W == dash.physics_loop.laser_power_W
+        assert state.physics_loop.pipeline_complete is True

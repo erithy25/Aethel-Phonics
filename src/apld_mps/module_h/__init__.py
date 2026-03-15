@@ -7,7 +7,15 @@ monitor, Petabit I/O, Stress test resilience center, and RL optimizer status.
 """
 
 from .dashboard import AethelDashboard, DashboardState, DashboardMode
-from .viewport import DigitalTwinViewport, ViewportSnapshot, RenderMode, CameraState
+from .viewport import (
+    DigitalTwinViewport,
+    ViewportSnapshot,
+    RenderMode,
+    CameraState,
+    EmissiveWaveguide,
+    PhaseJitterAlarm,
+    PhaseJitterAlarmLevel,
+)
 from .physics_panel import PhysicsControlPanel, SubstrateSelection, TMDConfiguration
 from .kreislauf_monitor import (
     KreislaufMonitor,
@@ -28,6 +36,9 @@ __all__ = [
     "ViewportSnapshot",
     "RenderMode",
     "CameraState",
+    "EmissiveWaveguide",
+    "PhaseJitterAlarm",
+    "PhaseJitterAlarmLevel",
     "PhysicsControlPanel",
     "SubstrateSelection",
     "TMDConfiguration",

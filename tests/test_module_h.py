@@ -8,6 +8,9 @@ from apld_mps.module_h.viewport import (
     RenderMode,
     CameraState,
     LayerVisibility,
+    EmissiveWaveguide,
+    PhaseJitterAlarm,
+    PhaseJitterAlarmLevel,
 )
 from apld_mps.module_h.physics_panel import PhysicsControlPanel
 from apld_mps.module_h.kreislauf_monitor import (
@@ -658,3 +661,231 @@ class TestCosmicRayIntegration:
         dash = self._make_dashboard_with_layout()
         result = dash.simulation_step(time_ps=0.0, dt_ps=1.0)
         assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# Emissive Waveguide Glow (Laser → 3D Viewport)
+# ---------------------------------------------------------------------------
+
+class TestEmissiveWaveguideGlow:
+    """Verify that configuring LaserPulses makes waveguides glow."""
+
+    def _make_viewport_with_layout(self) -> DigitalTwinViewport:
+        mapper = AutoMapper3D(volume_nm=(1e6, 1e6, 1e6))
+        layout = mapper.map_half_adder_3d(n_episodes=10)
+        return DigitalTwinViewport(layout)
+
+    def test_no_pulses_no_glow(self):
+        """Without laser pulses, no emissive waveguides."""
+        vp = DigitalTwinViewport()
+        result = vp.configure_laser_pulses([])
+        assert result == []
+        assert vp.emissive_waveguides == []
+
+    def test_single_pulse_creates_emissive(self):
+        """A single LaserPulse must produce one EmissiveWaveguide."""
+        vp = self._make_viewport_with_layout()
+        pulse = LaserPulse(energy_eV=1.72, intensity_W_cm2=1e4, waist_nm=500.0)
+        result = vp.configure_laser_pulses([pulse])
+        assert len(result) == 1
+        ew = result[0]
+        assert isinstance(ew, EmissiveWaveguide)
+        assert ew.intensity == pytest.approx(1.0)
+        assert ew.wavelength_nm > 0
+
+    def test_multiple_pulses(self):
+        """Multiple pulses produce multiple emissive waveguides."""
+        vp = self._make_viewport_with_layout()
+        pulses = [
+            LaserPulse(energy_eV=1.72, position_nm=(100.0, 100.0)),
+            LaserPulse(energy_eV=1.72, position_nm=(500.0, 500.0)),
+        ]
+        result = vp.configure_laser_pulses(pulses)
+        assert len(result) == 2
+
+    def test_emissive_color_is_valid_rgb(self):
+        """Emissive colour must be a valid (R, G, B) triplet in [0, 1]."""
+        vp = self._make_viewport_with_layout()
+        pulse = LaserPulse(energy_eV=1.72)
+        result = vp.configure_laser_pulses([pulse])
+        r, g, b = result[0].emissive_color_rgb
+        assert 0.0 <= r <= 1.0
+        assert 0.0 <= g <= 1.0
+        assert 0.0 <= b <= 1.0
+
+    def test_intensity_clamped_at_one(self):
+        """Very high laser intensity should clamp emissive intensity to 1.0."""
+        vp = self._make_viewport_with_layout()
+        pulse = LaserPulse(energy_eV=1.72, intensity_W_cm2=1e8)
+        result = vp.configure_laser_pulses([pulse])
+        assert result[0].intensity == pytest.approx(1.0)
+
+    def test_low_intensity_scales(self):
+        """Low laser intensity should produce proportionally lower glow."""
+        vp = self._make_viewport_with_layout()
+        pulse = LaserPulse(energy_eV=1.72, intensity_W_cm2=5e3)
+        result = vp.configure_laser_pulses([pulse])
+        assert result[0].intensity == pytest.approx(0.5)
+
+    def test_clear_emissive(self):
+        """clear_emissive must remove all highlights."""
+        vp = self._make_viewport_with_layout()
+        vp.configure_laser_pulses([LaserPulse(energy_eV=1.72)])
+        assert len(vp.emissive_waveguides) == 1
+        vp.clear_emissive()
+        assert vp.emissive_waveguides == []
+
+    def test_snapshot_contains_emissive(self):
+        """ViewportSnapshot must include emissive_waveguides."""
+        vp = self._make_viewport_with_layout()
+        vp.configure_laser_pulses([LaserPulse(energy_eV=1.72)])
+        snap = vp.get_snapshot()
+        assert len(snap.emissive_waveguides) == 1
+
+    def test_gate_resolution_with_layout(self):
+        """With a layout loaded, emissive gate_id must not be UNRESOLVED."""
+        vp = self._make_viewport_with_layout()
+        pulse = LaserPulse(energy_eV=1.72, position_nm=(0.0, 0.0))
+        result = vp.configure_laser_pulses([pulse])
+        assert result[0].gate_id != "UNRESOLVED"
+
+    def test_gate_resolution_without_layout(self):
+        """Without a layout, gate_id should be UNRESOLVED."""
+        vp = DigitalTwinViewport()
+        pulse = LaserPulse(energy_eV=1.72)
+        result = vp.configure_laser_pulses([pulse])
+        assert result[0].gate_id == "UNRESOLVED"
+
+    def test_wavelength_to_rgb_red(self):
+        """720 nm should produce a red-dominant colour."""
+        r, g, b = DigitalTwinViewport._wavelength_to_rgb(720.0)
+        assert r > g and r > b
+
+    def test_wavelength_to_rgb_blue(self):
+        """450 nm should produce a blue-dominant colour."""
+        r, g, b = DigitalTwinViewport._wavelength_to_rgb(450.0)
+        assert b > g
+
+
+# ---------------------------------------------------------------------------
+# Phase Jitter Alarm (Vibration → BER)
+# ---------------------------------------------------------------------------
+
+class TestPhaseJitterAlarm:
+    """Verify vibration-driven Phase Jitter alarm with live BER."""
+
+    def test_no_vibration_no_alarm(self):
+        """Without vibration, alarm is inactive."""
+        vp = DigitalTwinViewport()
+        assert vp.phase_jitter_alarm.active is False
+        assert vp.phase_jitter_alarm.level == PhaseJitterAlarmLevel.NONE
+
+    def test_small_vibration_no_alarm(self):
+        """Tiny vibration stays below alarm thresholds."""
+        vp = DigitalTwinViewport()
+        profile = VibrationProfile(
+            frequencies_Hz=np.array([50.0]),
+            amplitudes_nm=np.array([0.001]),
+        )
+        alarm = vp.update_vibration(profile)
+        assert alarm.active is False
+        assert alarm.bit_error_rate < vp.JITTER_WARNING_BER
+
+    def test_large_vibration_triggers_alarm(self):
+        """Large vibration amplitude must trigger the alarm."""
+        vp = DigitalTwinViewport()
+        profile = VibrationProfile(
+            frequencies_Hz=np.array([100.0, 200.0]),
+            amplitudes_nm=np.array([50.0, 30.0]),
+        )
+        alarm = vp.update_vibration(profile)
+        assert alarm.active is True
+        assert alarm.level in (
+            PhaseJitterAlarmLevel.WARNING,
+            PhaseJitterAlarmLevel.CRITICAL,
+        )
+        assert alarm.bit_error_rate > 0
+
+    def test_increasing_vibration_increases_ber(self):
+        """Higher vibration amplitude must drive BER upward."""
+        vp = DigitalTwinViewport()
+        profile_lo = VibrationProfile(
+            frequencies_Hz=np.array([100.0]),
+            amplitudes_nm=np.array([1.0]),
+        )
+        profile_hi = VibrationProfile(
+            frequencies_Hz=np.array([100.0]),
+            amplitudes_nm=np.array([10.0]),
+        )
+        alarm_lo = vp.update_vibration(profile_lo)
+        alarm_hi = vp.update_vibration(profile_hi)
+        assert alarm_hi.bit_error_rate > alarm_lo.bit_error_rate
+
+    def test_alarm_message_contains_ber(self):
+        """Active alarm message must mention BER value."""
+        vp = DigitalTwinViewport()
+        profile = VibrationProfile(
+            frequencies_Hz=np.array([100.0]),
+            amplitudes_nm=np.array([50.0]),
+        )
+        alarm = vp.update_vibration(profile)
+        assert alarm.active is True
+        assert "BER" in alarm.message
+
+    def test_alarm_tracks_vibration_amplitude(self):
+        """Alarm must report the RMS vibration amplitude."""
+        vp = DigitalTwinViewport()
+        profile = VibrationProfile(
+            frequencies_Hz=np.array([50.0, 120.0]),
+            amplitudes_nm=np.array([3.0, 4.0]),
+        )
+        alarm = vp.update_vibration(profile)
+        expected_rms = np.sqrt(3.0**2 + 4.0**2)
+        assert alarm.vibration_amplitude_nm == pytest.approx(expected_rms)
+
+    def test_clear_alarm(self):
+        """clear_phase_jitter_alarm resets state."""
+        vp = DigitalTwinViewport()
+        profile = VibrationProfile(
+            frequencies_Hz=np.array([100.0]),
+            amplitudes_nm=np.array([50.0]),
+        )
+        vp.update_vibration(profile)
+        assert vp.phase_jitter_alarm.active is True
+        vp.clear_phase_jitter_alarm()
+        assert vp.phase_jitter_alarm.active is False
+        assert vp.phase_jitter_alarm.bit_error_rate == 0.0
+
+    def test_snapshot_contains_alarm(self):
+        """ViewportSnapshot must include phase_jitter_alarm."""
+        vp = DigitalTwinViewport()
+        snap = vp.get_snapshot()
+        assert isinstance(snap.phase_jitter_alarm, PhaseJitterAlarm)
+
+    def test_critical_threshold(self):
+        """BER above JITTER_CRITICAL_BER must produce CRITICAL level."""
+        vp = DigitalTwinViewport()
+        # Very large amplitude to guarantee critical
+        profile = VibrationProfile(
+            frequencies_Hz=np.array([100.0]),
+            amplitudes_nm=np.array([200.0]),
+        )
+        alarm = vp.update_vibration(profile)
+        assert alarm.level == PhaseJitterAlarmLevel.CRITICAL
+
+    def test_phase_jitter_matches_analyser(self):
+        """Phase jitter value must match PhaseStabilityAnalyser output."""
+        from apld_mps.module_g.phase_stability import PhaseStabilityAnalyser
+        vp = DigitalTwinViewport(
+            waveguide_length_nm=10_000.0,
+            refractive_index=1.76,
+            wavelength_nm=720.0,
+        )
+        analyser = PhaseStabilityAnalyser(10_000.0, 1.76, 720.0)
+        profile = VibrationProfile(
+            frequencies_Hz=np.array([100.0]),
+            amplitudes_nm=np.array([5.0]),
+        )
+        alarm = vp.update_vibration(profile)
+        expected_jitter = analyser.compute_phase_jitter(profile)
+        assert alarm.rms_phase_jitter_rad == pytest.approx(expected_jitter)

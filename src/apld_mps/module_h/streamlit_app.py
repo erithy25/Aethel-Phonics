@@ -28,10 +28,15 @@ from apld_mps.module_i.latency_analyser import LatencyAnalyser
 from apld_mps.module_j.engine import AFEE, AFEEConfig, InferenceMode
 
 # ---------------------------------------------------------------------------
+# Plotly template — readable on both light and dark Streamlit themes
+# ---------------------------------------------------------------------------
+_PLOTLY_TEMPLATE = "plotly_white"
+
+# ---------------------------------------------------------------------------
 # Page config
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Aethel V1 — Command & Control",
+    page_title="Aethel V1 \u2014 Command & Control",
     page_icon="\u2b22",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -95,10 +100,14 @@ with st.sidebar:
     # Dispersion curve
     wl, n_vals = sub_info.dispersion_curve
     fig_disp = go.Figure()
-    fig_disp.add_trace(go.Scatter(x=wl, y=n_vals, mode="lines", name="n(\u03bb)"))
+    fig_disp.add_trace(go.Scatter(
+        x=wl, y=n_vals, mode="lines", name="n(\u03bb)",
+        line=dict(color="#0088cc"),
+    ))
     fig_disp.update_layout(
         height=200, margin=dict(l=40, r=10, t=10, b=30),
         xaxis_title="\u03bb [nm]", yaxis_title="n",
+        template=_PLOTLY_TEMPLATE,
     )
     st.plotly_chart(fig_disp, use_container_width=True)
 
@@ -169,9 +178,10 @@ with center_col:
         fig3d.add_trace(go.Scatter3d(
             x=gx, y=gy, z=gz,
             mode="markers+text",
-            marker=dict(size=8, color="cyan", symbol="diamond"),
+            marker=dict(size=8, color="#00bcd4", symbol="diamond"),
             text=labels,
             textposition="top center",
+            textfont=dict(size=11, color="#333333"),
             name="Gates",
         ))
 
@@ -184,19 +194,18 @@ with center_col:
                     y=[p[1] for p in wps],
                     z=[p[2] for p in wps],
                     mode="lines",
-                    line=dict(color="orange", width=3),
+                    line=dict(color="#ff7043", width=3),
                     showlegend=False,
                 ))
 
         fig3d.update_layout(
-            height=450,
+            height=500,
             scene=dict(
                 xaxis_title="X [nm]", yaxis_title="Y [nm]", zaxis_title="Z [nm]",
-                bgcolor="rgb(10,10,30)",
+                bgcolor="rgb(240,245,250)",
             ),
             margin=dict(l=0, r=0, t=30, b=0),
-            paper_bgcolor="rgb(10,10,30)",
-            font_color="white",
+            template=_PLOTLY_TEMPLATE,
         )
         st.plotly_chart(fig3d, use_container_width=True)
         st.caption(
@@ -215,7 +224,10 @@ with center_col:
             color_continuous_scale="inferno",
             labels=dict(color="\u03c1"),
         )
-        fig_field.update_layout(height=250, margin=dict(l=0, r=0, t=10, b=0))
+        fig_field.update_layout(
+            height=280, margin=dict(l=10, r=10, t=10, b=10),
+            template=_PLOTLY_TEMPLATE,
+        )
         st.plotly_chart(fig_field, use_container_width=True)
 
 
@@ -231,7 +243,8 @@ with right_col:
     alert_color = {"NOMINAL": "green", "WARNING": "orange", "CRITICAL": "red"}
     st.markdown(
         f"**Thermal Status:** "
-        f"<span style='color:{alert_color[alert.name]}'>\u25cf {alert.name}</span>",
+        f"<span style='color:{alert_color[alert.name]}; font-weight:bold;'>"
+        f"\u25cf {alert.name}</span>",
         unsafe_allow_html=True,
     )
     c1, c2 = st.columns(2)
@@ -243,7 +256,10 @@ with right_col:
         color_continuous_scale="hot",
         labels=dict(color="T [K]"),
     )
-    fig_thermal.update_layout(height=180, margin=dict(l=0, r=0, t=10, b=0))
+    fig_thermal.update_layout(
+        height=200, margin=dict(l=10, r=10, t=10, b=10),
+        template=_PLOTLY_TEMPLATE,
+    )
     st.plotly_chart(fig_thermal, use_container_width=True)
 
     # TPV recycling
@@ -299,12 +315,12 @@ with right_col:
         BottleneckType.NONE: "green",
         BottleneckType.MEMORY_BOUND: "red",
         BottleneckType.NETWORK_BOUND: "orange",
-        BottleneckType.INPUT_BOUND: "yellow",
-        BottleneckType.OUTPUT_BOUND: "yellow",
+        BottleneckType.INPUT_BOUND: "#cc9900",
+        BottleneckType.OUTPUT_BOUND: "#cc9900",
     }
     st.markdown(
         f"**Bottleneck:** "
-        f"<span style='color:{bn_colors[radar.bottleneck_type]}'>"
+        f"<span style='color:{bn_colors[radar.bottleneck_type]}; font-weight:bold;'>"
         f"{radar.bottleneck_name}</span> "
         f"({radar.headroom_percent:.0f}% Headroom)",
         unsafe_allow_html=True,
@@ -345,16 +361,14 @@ with left_col:
             y=progress.reward_history,
             mode="lines",
             name="Reward",
-            line=dict(color="lime"),
+            line=dict(color="#4caf50", width=2),
         ))
         fig_rl.update_layout(
-            height=200,
+            height=220,
             margin=dict(l=40, r=10, t=10, b=30),
             xaxis_title="Episode",
             yaxis_title="Reward",
-            paper_bgcolor="rgb(20,20,40)",
-            plot_bgcolor="rgb(20,20,40)",
-            font_color="white",
+            template=_PLOTLY_TEMPLATE,
         )
         st.plotly_chart(fig_rl, use_container_width=True)
 
@@ -422,7 +436,10 @@ with tab_resilience:
                 labels=dict(color="Availability"),
                 zmin=0, zmax=1,
             )
-            fig_avail.update_layout(height=180, margin=dict(l=0, r=0, t=10, b=0))
+            fig_avail.update_layout(
+                height=200, margin=dict(l=10, r=10, t=10, b=10),
+                template=_PLOTLY_TEMPLATE,
+            )
             st.plotly_chart(fig_avail, use_container_width=True)
 
     with bot_right:
@@ -549,17 +566,15 @@ with tab_tensor:
                 fig_clusters = go.Figure(go.Bar(
                     x=list(cluster_counts.keys()),
                     y=list(cluster_counts.values()),
-                    marker_color="cyan",
+                    marker_color="#0088cc",
                 ))
                 fig_clusters.update_layout(
                     title="Gate-Cluster-Verteilung",
-                    height=250,
+                    height=280,
                     margin=dict(l=40, r=10, t=40, b=30),
-                    paper_bgcolor="rgb(20,20,40)",
-                    plot_bgcolor="rgb(20,20,40)",
-                    font_color="white",
                     xaxis_title="Cluster-Typ",
                     yaxis_title="Anzahl",
+                    template=_PLOTLY_TEMPLATE,
                 )
                 st.plotly_chart(fig_clusters, use_container_width=True)
         else:
@@ -653,52 +668,68 @@ with tab_afee:
                 fid_color = "green" if entry["fidelity"] > 0.9 else "orange" if entry["fidelity"] > 0.5 else "red"
                 st.markdown(
                     f"**AFEE:** {entry['response']} "
-                    f"<span style='color:{fid_color}; font-size:0.8em;'>"
+                    f"<span style='color:{fid_color}; font-size:0.9em; font-weight:bold;'>"
                     f"[Fidelity: {entry['fidelity']:.1%}]</span>",
                     unsafe_allow_html=True,
                 )
 
     with afee_right:
-        st.markdown("**Fidelity-Meter**")
+        st.markdown("### Fidelity-Meter")
 
         # Get current fidelity
         fid = afee._compute_fidelity()
 
-        # Overall fidelity gauge
+        # Overall fidelity gauge — large, readable, theme-compatible
         fig_gauge = go.Figure(go.Indicator(
-            mode="gauge+number",
+            mode="gauge+number+delta",
             value=fid.overall_fidelity * 100,
-            title={"text": "Gesamt-Fidelity"},
+            number={"suffix": "%", "font": {"size": 36}},
+            title={"text": "Gesamt-Fidelity", "font": {"size": 16}},
             gauge={
-                "axis": {"range": [0, 100]},
-                "bar": {"color": "cyan"},
+                "axis": {"range": [0, 100], "tickwidth": 2, "tickfont": {"size": 12}},
+                "bar": {"color": "#0088cc", "thickness": 0.6},
+                "bgcolor": "white",
+                "borderwidth": 2,
+                "bordercolor": "#cccccc",
                 "steps": [
-                    {"range": [0, 50], "color": "rgba(255,0,0,0.3)"},
-                    {"range": [50, 80], "color": "rgba(255,165,0,0.3)"},
-                    {"range": [80, 100], "color": "rgba(0,255,0,0.3)"},
+                    {"range": [0, 50], "color": "#ffcdd2"},
+                    {"range": [50, 80], "color": "#fff9c4"},
+                    {"range": [80, 100], "color": "#c8e6c9"},
                 ],
                 "threshold": {
-                    "line": {"color": "red", "width": 4},
-                    "thickness": 0.75,
+                    "line": {"color": "#d32f2f", "width": 4},
+                    "thickness": 0.8,
                     "value": 50,
                 },
             },
         ))
         fig_gauge.update_layout(
-            height=200, margin=dict(l=20, r=20, t=40, b=10),
-            paper_bgcolor="rgb(20,20,40)", font_color="white",
+            height=280,
+            margin=dict(l=30, r=30, t=60, b=20),
+            template=_PLOTLY_TEMPLATE,
         )
         st.plotly_chart(fig_gauge, use_container_width=True)
 
-        # Sub-fidelity bars
+        # Sub-fidelity component bars with clear labels
         st.markdown("**Komponenten:**")
-        st.progress(fid.thermal_fidelity, text=f"Thermal: {fid.thermal_fidelity:.1%}")
-        st.progress(fid.coherence_fidelity, text=f"Koharenz: {fid.coherence_fidelity:.1%}")
-        st.progress(fid.reversibility_fidelity, text=f"Reversibel: {fid.reversibility_fidelity:.1%}")
 
-        # Temperature
-        st.metric("T_chip", f"{fid.peak_temperature_K:.1f} K")
-        st.metric("Phase Error", f"{fid.phase_error_rad:.4f} rad")
+        # Thermal fidelity
+        st.markdown(f"Thermal: **{fid.thermal_fidelity:.1%}**")
+        st.progress(fid.thermal_fidelity)
+
+        # Coherence fidelity
+        st.markdown(f"Koh\u00e4renz: **{fid.coherence_fidelity:.1%}**")
+        st.progress(fid.coherence_fidelity)
+
+        # Reversibility fidelity
+        st.markdown(f"Reversibel: **{fid.reversibility_fidelity:.1%}**")
+        st.progress(fid.reversibility_fidelity)
+
+        # Temperature & phase error as clear metrics
+        st.markdown("---")
+        m1, m2 = st.columns(2)
+        m1.metric("T_chip", f"{fid.peak_temperature_K:.1f} K")
+        m2.metric("Phase Error", f"{fid.phase_error_rad:.4f} rad")
 
         if fid.is_breakdown:
             st.error("THERMAL BREAKDOWN!")
